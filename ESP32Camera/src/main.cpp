@@ -33,7 +33,7 @@ static const char* TAG = "main.cpp";
 #define HREF_GPIO_NUM   	23
 #define PCLK_GPIO_NUM   	22
 
-#define PACKAGE_SIZE_BYTES	64
+#define PACKAGE_SIZE_BYTES	128
 #define CMD_ACK_SIZE_BYTES	1
 
 							
@@ -62,7 +62,7 @@ typedef union {									// Wrapper for image_information struct
 
 /* Global Variables 	*/
 camera_config_t camera_config; 					// Configuration struct for cam
-uint8_t uiTxBuffer[64] = {0};					// TxBuffer for sending images
+uint8_t uiTxBuffer[PACKAGE_SIZE_BYTES] = {0};					// TxBuffer for sending images
 uint8_t uiRxBuffer[1] = {0};					// RxBuffer for recieving commands/ack
 image_information_tx_wrapper_t image_info_tx;	// image information
 
@@ -141,7 +141,31 @@ esp_err_t camera_init(){
         return err;
     }
 
+	// Change some sensor settings
 	sensor_t * s = esp_camera_sensor_get();
+	s->set_brightness(s, 0);     // -2 to 2
+	s->set_contrast(s, 0);       // -2 to 2
+	s->set_saturation(s, 0);     // -2 to 2
+	s->set_special_effect(s, 0); // 0 to 6 (0 - No Effect, 1 - Negative, 2 - Grayscale, 3 - Red Tint, 4 - Green Tint, 5 - Blue Tint, 6 - Sepia)
+	s->set_whitebal(s, 1);       // 0 = disable , 1 = enable
+	s->set_awb_gain(s, 1);       // 0 = disable , 1 = enable
+	s->set_wb_mode(s, 0);        // 0 to 4 - if awb_gain enabled (0 - Auto, 1 - Sunny, 2 - Cloudy, 3 - Office, 4 - Home)
+	s->set_exposure_ctrl(s, 1);  // 0 = disable , 1 = enable
+	s->set_aec2(s, 0);           // 0 = disable , 1 = enable
+	s->set_ae_level(s, 0);       // -2 to 2
+	s->set_aec_value(s, 300);    // 0 to 1200
+	s->set_gain_ctrl(s, 1);      // 0 = disable , 1 = enable
+	s->set_agc_gain(s, 0);       // 0 to 30
+	s->set_gainceiling(s, (gainceiling_t)0);  // 0 to 6
+	s->set_bpc(s, 0);            // 0 = disable , 1 = enable
+	s->set_wpc(s, 1);            // 0 = disable , 1 = enable
+	s->set_raw_gma(s, 1);        // 0 = disable , 1 = enable
+	s->set_lenc(s, 1);           // 0 = disable , 1 = enable
+	s->set_hmirror(s, 0);        // 0 = disable , 1 = enable
+	s->set_vflip(s, 0);          // 0 = disable , 1 = enable
+	s->set_dcw(s, 1);            // 0 = disable , 1 = enable
+	s->set_colorbar(s, 0);       // 0 = disable , 1 = enable
+
 	// initial sensors are flipped vertically and colors are a bit saturated
 	if (s->id.PID == OV3660_PID) {
 		s->set_vflip(s, 1); // flip it back
@@ -150,6 +174,13 @@ esp_err_t camera_init(){
 	}
 	// drop down frame size for higher initial frame rate
 	//s->set_framesize(s, FRAMESIZE_QVGA);
+
+	// Initially capture some frames
+	for (uint8_t i = 0; i < 10; i++) {
+		camera_fb_t * fb = esp_camera_fb_get();
+    	esp_camera_fb_return(fb);
+    	fb = nullptr;
+	}
 
     return ESP_OK;
 }
@@ -161,9 +192,8 @@ esp_err_t camera_capture(bool flashLight) {
     // Acquire a frame
 	if (flashLight) {
     	digitalWrite(4,HIGH);
-		delay(80);
     	fb = esp_camera_fb_get();
-    	digitalWrite(4,LOW);
+		digitalWrite(4,LOW);
 	} else {
 		fb = esp_camera_fb_get();
 	}
@@ -201,7 +231,7 @@ esp_err_t process_image(long unsigned int width, long unsigned int height, pixfo
 	}
 	
 	// Transfer data in PACKAGE_SIZE_BYTES byte packages
-    for (unsigned long int i = 0; i < (unsigned long int)len/64; i++) {
+    for (unsigned long int i = 0; i < (unsigned long int)len/PACKAGE_SIZE_BYTES; i++) {
         Serial.write(buf+i*PACKAGE_SIZE_BYTES, PACKAGE_SIZE_BYTES);
 		// Wait for ACK
 		while (Serial.available() < 1);

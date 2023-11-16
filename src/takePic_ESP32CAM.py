@@ -3,6 +3,9 @@ import serial
 import serial.tools.list_ports
 import struct
 from time import sleep
+
+PACKAGE_SIZE_BYTES = 128
+
 msgSet = {"REC": 1, "ACK": 2, "TRANSMISSION_OKAY": 3, "TRANSMISSION_FAIL": 4}
 
 ports = serial.tools.list_ports.comports()
@@ -37,20 +40,20 @@ rxBytes = ser.read(16)
 msg = struct.pack("<B",msgSet["ACK"])
 ser.write(msg)
 
-# recieve image in packages of 64 bytes, so the recieve buffer will never overflow
+# recieve image in packages of PACKAGE_SIZE_BYTES bytes, so the recieve buffer will never overflow
 imageBytes = b''
-for i in range(0,int(length/64)):
-	while ser.inWaiting() < 64:
+for i in range(0,int(length/PACKAGE_SIZE_BYTES)):
+	while ser.inWaiting() < PACKAGE_SIZE_BYTES:
 		pass
-	imageBytes = imageBytes + ser.read(64)
+	imageBytes = imageBytes + ser.read(PACKAGE_SIZE_BYTES)
 
 	# Send ACK message
 	msg = struct.pack("<B",msgSet["ACK"])
 	ser.write(msg)
 
-while ser.inWaiting() < length%64:
+while ser.inWaiting() < length%PACKAGE_SIZE_BYTES:
 	pass
-imageBytes = imageBytes + ser.read(length%64)
+imageBytes = imageBytes + ser.read(length%PACKAGE_SIZE_BYTES)
 
 # Send ACK message
 msg = struct.pack("<B",msgSet["ACK"])
