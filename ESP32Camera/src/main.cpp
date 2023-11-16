@@ -33,8 +33,16 @@ static const char* TAG = "main.cpp";
 #define HREF_GPIO_NUM   	23
 #define PCLK_GPIO_NUM   	22
 
-#define PACKAGE_SIZE_BYTES		64
-#define CMD_ACK_SIZE_BYTES		1
+#define PACKAGE_SIZE_BYTES	64
+#define CMD_ACK_SIZE_BYTES	1
+
+							
+#define REC 				1					// Record image cmd
+#define ACK 				2					// Acknowlegement that package was received
+#define TRANSMISSION_ERROR 	3					// Image transmission failed
+#define TRANSMISSION_OKAY 	4					// Image transmission okay
+
+
 
 
 
@@ -51,13 +59,6 @@ typedef union {									// Wrapper for image_information struct
 	uint8_t raw[sizeof(image_information_t)];	// raw bytes
 } image_information_tx_wrapper_t;
 
-typedef enum {									
-	REC 				= 1,					// Record image cmd
-	ACK 				= 2,					// Acknowlegement that package was received
-	TRANSMISSION_ERROR 	= 3,					// Image transmission failed
-	TRANSMISSION_OKAY 	= 4,					// Image transmission okay
-} rx_msg_t;
-
 
 /* Global Variables 	*/
 camera_config_t camera_config; 					// Configuration struct for cam
@@ -71,23 +72,27 @@ esp_err_t camera_capture(bool flashLight);
 int process_image(long unsigned int width, long unsigned int height, pixformat_t format, uint8_t * buf, long unsigned int len);
 
 void setup() {
-	// Set up serial communication
-	Serial.begin(115200);
-	Serial.print("Hallo");
-	delay(1000);
 	// Configure flash led
 	pinMode(4,OUTPUT);
 
+	// Set up serial communication
+	Serial.begin(9600);
+	while (!Serial);
+
+
 	// Init camera
-	Serial.print("Init Camera ...");
 	camera_init();
-	Serial.print("Finished");
+	
 }
 
 void loop() {
-	Serial.print("Take Picture");
-	delay(1000);
-	camera_capture(true);
+	if (Serial.available() >= 1) {
+		Serial.read(uiRxBuffer, 1);
+		if (true) { // uiRxBuffer[0] == REC
+			camera_capture(true);
+		}
+	}
+	
 }
 
 esp_err_t camera_init(){
@@ -176,8 +181,6 @@ esp_err_t camera_capture(bool flashLight) {
 }
 
 esp_err_t process_image(long unsigned int width, long unsigned int height, pixformat_t format, uint8_t * buf, long unsigned int len) {
-	rx_msg_t msg = ACK;
-
 	// fill in image information
 	image_info_tx.info = {	.width = width,
 							.height = height,
@@ -188,7 +191,7 @@ esp_err_t process_image(long unsigned int width, long unsigned int height, pixfo
     // Note: ESP32Cam MB (Serial Interface/ Programmer) has no connections to enable HW Flow Control
 	// Serial Transmission
 	// Transfer image information
-	/*Serial.write(image_info_tx.raw,sizeof(image_information_tx_wrapper_t));
+	Serial.write(image_info_tx.raw,sizeof(image_information_tx_wrapper_t));
 
 	// wait for ack from receiver
 	while (Serial.available() < 1);
@@ -199,15 +202,19 @@ esp_err_t process_image(long unsigned int width, long unsigned int height, pixfo
 	}
 	
 	// Transfer data in PACKAGE_SIZE_BYTES byte packages
-    for (int i = 0; i < PACKAGE_SIZE_BYTES; i++) {
-        uiTxBuffer[i] = (uint8_t)(len >> i*8);
+    for (unsigned long int i = 0; i < (unsigned long int)len/64; i++) {
+        Serial.write(buf+i*PACKAGE_SIZE_BYTES, PACKAGE_SIZE_BYTES);
+		// Wait for ACK
+		while (Serial.available() < 1);
+		Serial.readBytes(uiRxBuffer,1);
+		/// TODO: Check message 
     }
-    if (Serial.availableForWrite()) {
-        Serial.write(uiTxBuffer,8);
-        delay(1000);
-        if (Serial.availableForWrite()) {
-            Serial.write(buf,len);
-        }
-    }*/
+	int r = len%64;
+	Serial.write(buf+(len-(r+1)),r);
+	// Wait for ACK
+	while (Serial.available() < 1);
+	Serial.readBytes(uiRxBuffer,1);
+	/// TODO: Check message 
+
     return ESP_OK;
 }
