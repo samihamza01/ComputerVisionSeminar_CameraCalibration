@@ -76,9 +76,7 @@ void setup() {
 	pinMode(4,OUTPUT);
 
 	// Set up serial communication
-	Serial.begin(9600);
-	while (!Serial);
-
+	Serial.begin(115200);
 
 	// Init camera
 	camera_init();
@@ -88,7 +86,7 @@ void setup() {
 void loop() {
 	if (Serial.available() >= 1) {
 		Serial.read(uiRxBuffer, 1);
-		if (true) { // uiRxBuffer[0] == REC
+		if (uiRxBuffer[0] == REC) {
 			camera_capture(true);
 		}
 	}
@@ -151,7 +149,7 @@ esp_err_t camera_init(){
 		s->set_saturation(s, -2); // lower the saturation
 	}
 	// drop down frame size for higher initial frame rate
-	s->set_framesize(s, FRAMESIZE_QVGA);
+	//s->set_framesize(s, FRAMESIZE_QVGA);
 
     return ESP_OK;
 }
@@ -163,6 +161,7 @@ esp_err_t camera_capture(bool flashLight) {
     // Acquire a frame
 	if (flashLight) {
     	digitalWrite(4,HIGH);
+		delay(80);
     	fb = esp_camera_fb_get();
     	digitalWrite(4,LOW);
 	} else {
@@ -209,7 +208,7 @@ esp_err_t process_image(long unsigned int width, long unsigned int height, pixfo
 		Serial.readBytes(uiRxBuffer,1);
 		/// TODO: Check message 
     }
-	int r = len%64;
+	int r = len%PACKAGE_SIZE_BYTES;
 	Serial.write(buf+(len-(r+1)),r);
 	// Wait for ACK
 	while (Serial.available() < 1);
