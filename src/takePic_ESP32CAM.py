@@ -2,8 +2,6 @@ import serial
 import serial.tools.list_ports
 import struct
 from time import sleep
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
 import io
 from PIL import ImageFile, Image
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -94,10 +92,23 @@ if __name__ == "__main__":
 	try:
 		cam = ESPCam("COM4")
 		cam.connect()
-		cam.recordImage()
-		cam.displayImageBuffer()
-		cam.storeImage("test.jpeg")
+		while 1:
+			input("Hit enter to take picture: ")
+			print("Processing...")
+			cam.recordImage()
+			print("Image received")
+			cam.displayImageBuffer()
+			cmd = input("Store the shown image? [y,n]")
+			if cmd == "y" or cmd == "Y":
+				filename = input("Enter filename for image: ")
+				cam.storeImage("./calibration_images/"+filename+".jpeg")
+				print("Image stored in: ./calibration_images/"+filename+".jpeg")
+			cmd = input("Record another image? [y,n]: ")
+			if cmd == "n" or cmd == "N":
+				break
+		print("Disconnecting...")
 		cam.disconnect()
+		print("End of programm.")
 	except:
 		print("Error Occured: Disconnecting from Camera...")
 		cam.disconnect()
