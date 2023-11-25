@@ -36,7 +36,7 @@ def rot_around_axis(vector: npt.NDArray[tp.Any],axis: npt.NDArray[tp.Any], angle
 	v_rot = np.matmul(rotMat, vector)
 	return v_rot
 
-def world_2_mage(worldPoint: npt.NDArray[tp.Any],rotVec: npt.NDArray[tp.Any], transVec: npt.NDArray[tp.Any], camMat: npt.NDArray[tp.Any], distCoeffVec: npt.NDArray[tp.Any]) -> npt.NDArray[tp.Any]:
+def world_2_image(worldPoint: npt.NDArray[tp.Any],rotVec: npt.NDArray[tp.Any], transVec: npt.NDArray[tp.Any], camMat: npt.NDArray[tp.Any], distCoeffVec: npt.NDArray[tp.Any]) -> npt.NDArray[tp.Any]:
 	"""
 	@brief Function to project a world point into the image plane.
 
@@ -53,7 +53,7 @@ def world_2_mage(worldPoint: npt.NDArray[tp.Any],rotVec: npt.NDArray[tp.Any], tr
 	if np.linalg.norm(rotVec) != 0:
 		camPoint = rot_around_axis(worldPoint,rotVec/np.linalg.norm(rotVec),np.linalg.norm(rotVec)) + transVec
 	else:
-		camPoint = worldPoint + transVec.copy()
+		camPoint = worldPoint + transVec
 
 	# Project in normalised image plane
 	normImgPoint = np.array(	[camPoint[0]/camPoint[2],
@@ -92,6 +92,6 @@ if __name__ == "__main__":
 	distCoeffVec = np.zeros((9,))
 	camMat = np.array([[0.002*2000,0,0],[0,0.002*2000,0]])
 
-	print(world_2_mage( worldPoint,rotVec,transVec,camMat,distCoeffVec))
+	print(world_2_image( worldPoint,rotVec,transVec,camMat,distCoeffVec))
 
 	
