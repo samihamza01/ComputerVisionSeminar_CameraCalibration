@@ -1,78 +1,178 @@
-"""!@package:	LevenbergMarquardt
+"""@package:	LevenbergMarquardt
 Author:	Sami Hamza
 
 Python implementation of the Levenberg Marquardt Algorithm.
 """
 
 import numpy as np
+
+# typing
 import numpy.typing as npt
 import typing as tp
 
 class LevenbergMarquardOptimizer():
-	"""!@class:	LevenbergMarquardt 
-		@brief:	Algorithm according to madsen alg. 3.16.
+	"""Levenberg Marquardt Algorithm according to madsen alg. 3.16.
 	"""
 
+	# attributes
+	maxIterations: int
+	gradientThr: float
+	parameterStepThr: float
 
-	def __init__(self, referenceVector, mappingFunction, paramVector, maxIterations, gradientThr, paramStepThr) -> None:
-		"""!@brief:	ctor.
+	lamb: float
 
-			@param referenceVector:	Vector containing all reference/ground truth data.
-			@param mappingFunction:	Function that needs to be fitted.
-			@param paramVector:		Vector containing the function parameters.
-			@param maxIterations: 	Value specifying the maximum number of Iterations.
-			@param gradientThr:		Convergence criteria threshold for the gradient specified by a small value.
-			@param paramStepThr:		Convergence criteria threshold for the parameter step specified by a small value.
+	def __init__(self, maxIterations=200, gradientThr=1e-8, parameterStepThr=1e-8) -> None:
+		"""Constrictor.
+
+		Args:
+			maxIterations (tp.Callable): 			Value specifying the maximum number of Iterations (default = 400).
+			gradientThr (npt.ArrayLike): 			Convergence criteria threshold for the gradient specified by a small value (default = 1e-8).
+			parameterStepThr (npt.ArrayLike): 		Convergence criteria threshold for the parameter step specified by a small value (default = 1e-8).
+
+		Returns:
+			None
 		"""
-		pass
+
+		self.maxIterations = maxIterations
+		self.gradientThr = gradientThr
+		self.parameterStepThr = parameterStepThr
+		return
 	
-	def cal_jacobian(self) -> npt.NDArray:
-		"""!@brief:	Helper method to calculate the jacobian of the mapping function. The jacobian can be approximated analytically
-					or numerically.
+	def _cal_jacobian(self, residualFunction: tp.Callable, parameterVector: npt.ArrayLike, inputVector: npt.ArrayLike, referenceVector: npt.ArrayLike) -> npt.ArrayLike:
+		"""Helper Function to calculate the jacobian of the given residual function.
 
-			@param
+		Args:
+			residualFunction (tp.Callable): 			Residualfunction. Must be a function of the parametervector (paramVector),
+														the input (inputVector) and the reference data (referenceVector).
+			parameterVector (npt.ArrayLike): 			Vector containing the function parameters.
+			inputVector (npt.ArrayLike): 				Vector of input to corresponding reference.
+			referenceVector (npt.ArrayLike): 			Vector containing all reference/ground truth data.
 
-			@return:
+		Returns:
+			npt.ArrayLike: Jacobian matrix.
 		"""
-		pass
+		m = referenceVector.shape[0]
+		n = parameterVector.shape[0]
 
-	def cal_gain_ratio(self) -> float:
-		"""!@brief:	Helper method to calculate the parameterstep evaluation metric.
+		h = 1e-6
+		eye = np.eye(n) * h
 
-			@param
+		jacobianMat = np.zeros(shape=(m, n))
 
-			@return:
+		for i, _ in enumerate(parameterVector):
+			
+			r_plus = residualFunction(parameterVector + eye[i], inputVector, referenceVector)
+			r_minus = residualFunction(parameterVector - eye[i], inputVector, referenceVector)
+
+			central_difference = (r_plus - r_minus) / (2*h)
+
+			jacobianMat[:, i] = central_difference
+		return jacobianMat
+
+
+	def optimize(self, residualFunction: tp.Callable, parameterVector: npt.ArrayLike, inputVector: npt.ArrayLike, referenceVector: npt.ArrayLike) -> tp.Tuple[npt.ArrayLike,float,float,int]:
+		"""Function to optimze the specified problem
+
+		Args:
+			residualFunction (tp.Callable): 			Residualfunction. Must be a function of the parametervector (paramVector),
+														the input (inputVector) and the reference data (referenceVector).
+			parameterVector (npt.ArrayLike): 			Vector containing the function parameters.
+			inputVector (npt.ArrayLike): 				Vector of input to corresponding reference.
+			referenceVector (npt.ArrayLike): 			Vector containing all reference/ground truth data.
+
+		Returns:
+			tp.Tuple[npt.ArrayLike,float,float,int]: 	A tupel of the optimal parameters, the final error of the least squares problem,
+														the mean of the residuals and the iteration where convergence was reached.
 		"""
-		pass
 
-	def update_lambda(self) -> float:
-		"""!@brief:	Helper method to update the marquardt parameter lambda. [see garvin + madsen]
+		iteration = 0
+		v = 2
+		tau = 1e-3
+		
+		# calculate jacobian
+		jacobianMat = self._cal_jacobian(residualFunction, parameterVector, inputVector, referenceVector)
+		# calculate the inforamtion matrix (approximation of problems hessian)
+		infMat = np.matmul(jacobianMat.T,jacobianMat)
+		# calculate gradient
+		residualVector = residualFunction(parameterVector, inputVector, referenceVector)
+		grad = np.matmul(jacobianMat.T,residualVector)
 
-			@param
+		# determine the stating value of lambda
+		lamb = tau * np.max(np.diag(infMat))
 
-			@return:
-		"""
-		pass
+		# convergence condition
+		found = np.linalg.norm(grad) <= self.gradientThr
+		
+		while (not found) and (iteration <= self.maxIterations) :
+			# solve normal equation for parameter update
+			parameterStep = np.linalg.solve(infMat + lamb*np.diag(np.diag(infMat)), -grad)
 
-	def solve_LM_for_paramUpdate(self) -> npt.NDArray(tp.Any):
-		"""!@brief:	Helper method to solve LM-equation for parameter update vector. This can be done by solving the normal 
-					equations or by performing the orthogonal transformation. Second will be more precise, but also more expensive.
+			# check for convergence in parameterStep
+			if np.linalg.norm(parameterStep) <= self.parameterStepThr*(np.linalg.norm(parameterVector) + self.parameterStepThr):
+				found = True
+			else:
+				parameterVectorNew = parameterVector + parameterStep
+				# calculate gain ratio
+				residualVectorNew = residualFunction(parameterVectorNew, inputVector, referenceVector)
+				change = np.matmul(residualVector.T,residualVector) - np.matmul(residualVectorNew.T,residualVectorNew)
+				estimatedChange = np.matmul(parameterStep.T, lamb*parameterStep - np.matmul(jacobianMat.T,residualVector))
+				gain_ratio = change/estimatedChange
 
-			@param
+				if gain_ratio > 0:
+					# step accepted
+					# set new parametervector
+					parameterVector = parameterVector + parameterStep
+					residualVector = residualVectorNew
+					# calc new information matrix and gradient
+					jacobianMat = self._cal_jacobian(residualFunction, parameterVector, inputVector, referenceVector)
+					infMat = np.matmul(jacobianMat.T,jacobianMat)
+					grad = np.matmul(jacobianMat.T,residualVector)
+					# check convergence in gradient
+					found = np.linalg.norm(grad) <= self.gradientThr
 
-			@return:
-		"""
-		pass
-
-	def begin(self) -> npt.NDArray(tp.Any):
-		"""!@brief:	Performs the optimization.
-
-			@return:	The minimized scalar value of the non linear least square problems objective function.
-		"""
-		pass
+					# update lambda
+					lamb = lamb*np.max([1/3, 1 - (2*gain_ratio-1)**3])
+					v = 2
+				else:
+					# step not accepted
+					# update lambda
+					lamb = lamb * v
+					v = 2*v
+			iteration += 1 
+		
+		# final error of the least square problem
+		error = np.matmul(residualVector.T,residualVector)
+		# mean of the residuals
+		meanResidual = np.sum(residualVector)/residualVector.shape[0]
+		return (parameterVector, error, meanResidual, iteration)
 	
 
 if __name__ == "__main__":
-	pass
+	print("Example of nonlinear least squares optimization with Levenberg Marquardt Algorithm")
+	print("Exponential fitting: a*exp(b*x)")
+	
+	# define the function to fit and the residual function
+	def exampleFunc(parameterVec, inputVec):
+		return parameterVec[0]*np.exp( parameterVec[1]*inputVec)
+	def residualFunc(parameterVec, inputVec, referenceVec):
+		return referenceVec - exampleFunc(parameterVec, inputVec)
+
+	# simulate reference data (normally the data to fit the function to)
+	inp = np.linspace(0,10,100)
+	params = np.array([2.,-1.8])
+	y = exampleFunc(params, inp)
+	#print(f"Reference data:\n{y}")
+
+	# initial parameter guess
+	initParams = np.array([1.,0.])
+	print(f"Initial params: a={initParams[0]}, b={initParams[1]}")
+	levMarq = LevenbergMarquardOptimizer(200,1e-8,1e-8)
+	paramsOpt, error, meanResidual, iteration = levMarq.optimize(residualFunc,initParams,inp, y)
+	print(f"Reached convergence after {iteration} iterations.")
+	print(f"Optimized params: {paramsOpt}")
+	print(f"Final squared error: {error}")
+	print(f"Mean residuals: {meanResidual}")
+
+
 
 	
