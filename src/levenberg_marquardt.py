@@ -140,11 +140,16 @@ class LevenbergMarquardOptimizer():
 					v = 2*v
 			iteration += 1 
 		
+		# error (sensitivity analysis)
+		covar_parameters = np.linalg.inv(infMat)
+		stddev_parameters = np.sqrt(np.diag(covar_parameters))
+		error_parameters = stddev_parameters/parameterVector
+
 		# final error of the least square problem
 		error = np.matmul(residualVector.T,residualVector)
 		# mean of the residuals
 		meanResidual = np.sum(residualVector)/residualVector.shape[0]
-		return (parameterVector, error, meanResidual, iteration)
+		return (parameterVector, error, meanResidual, stddev_parameters, error_parameters, iteration)
 	
 
 if __name__ == "__main__":
@@ -167,11 +172,14 @@ if __name__ == "__main__":
 	initParams = np.array([1.,0.])
 	print(f"Initial params: a={initParams[0]}, b={initParams[1]}")
 	levMarq = LevenbergMarquardOptimizer(200,1e-8,1e-8)
-	paramsOpt, error, meanResidual, iteration = levMarq.optimize(residualFunc,initParams,inp, y)
+	paramsOpt, error, meanResidual, stddev_parameters, error_parameters, iteration = levMarq.optimize(residualFunc,initParams,inp, y)
 	print(f"Reached convergence after {iteration} iterations.")
 	print(f"Optimized params: {paramsOpt}")
 	print(f"Final squared error: {error}")
 	print(f"Mean residuals: {meanResidual}")
+	print("Sensitivity:")
+	print(f"Standard deviation params: {stddev_parameters}")
+	print(f"Standard error params: {error_parameters}")
 
 
 
