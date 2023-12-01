@@ -1,4 +1,4 @@
-"""@package docstring
+"""@package CameraModel
 Author: Sami Hamza
 
 Python implementation of a camera model.
@@ -7,6 +7,52 @@ Python implementation of a camera model.
 import numpy as np
 import numpy.typing as npt
 import typing as tp
+
+class CameraModel():
+	"""Camera model according to Zhang.
+	"""
+
+	def __init__(self, cameraMat: npt.ArrayLike | None, distortionVec: npt.ArrayLike | None, ) -> None:
+		pass
+
+	def world_2_image(self, objectPoints: tp.List[tp.List[npt.ArrayLike]]):
+		pass
+
+	def _rot_around_axis(self):
+		pass
+
+	def calibrate(self, objectPoints: tp.List[tp.List[npt.ArrayLike]], imagePoints: tp.List[tp.List[npt.ArrayLike]]):
+		pass
+	
+	def _world_2_image(self, parameterVec: npt.ArrayLike, objectPoints: tp.List[tp.List[npt.ArrayLike]]):
+		pass
+
+	def _residual_function(self, parameterVec: npt.ArrayLike, objectPoints: tp.List[tp.List[npt.ArrayLike]], imagePoints: tp.List[tp.List[npt.ArrayLike]]):
+		# determine size of residual vector and create it
+		length = 0
+		for a in objectPoints:
+			length += len(a)
+
+		residualVec = np.zeros((length,))
+
+		# calculate residual vector
+		idxResidual = 0
+		for idxView, elementView in enumerate(objectPoints):
+			for idxPoint, elementPoint in enumerate(elementView):
+				estimatedPoint = self.world_2_image(parameterVec,objectPoints[idxView][idxPoint])
+				residualVec[idxResidual] = np.linalg.norm(imagePoints[idxView][idxPoint] - estimatedPoint)
+				idxResidual += 1
+
+		return residualVec
+
+	def _calibration_plot_reprojection_error(self):
+		pass
+
+	def save_cam_to_json():
+		pass
+
+	def read_cam_from_json():
+		pass
 
 
 def rot_around_axis(vector: npt.NDArray[tp.Any],axis: npt.NDArray[tp.Any], angle: float) -> npt.NDArray[tp.Any]:
