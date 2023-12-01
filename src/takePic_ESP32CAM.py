@@ -9,7 +9,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 class ESPCam():
 	# attibutes
 	port = ""
-	baudrate = 115200
+	baudrate = 500000
 	PACKAGE_SIZE_BYTES = 128
 	msgSet = {"REC": 1, "ACK": 2, "TRANSMISSION_OKAY": 3, "TRANSMISSION_FAIL": 4}
 	binImageBuffer = b''
@@ -28,7 +28,7 @@ class ESPCam():
 		return
 
 	def connect(self):
-		self.ser = serial.Serial(self.port,115200)
+		self.ser = serial.Serial(self.port,self.baudrate)
 		# Trigger reset
 		self.ser.setDTR(True)
 		self.ser.setDTR(False)
