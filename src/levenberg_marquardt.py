@@ -5,6 +5,7 @@ Python implementation of the Levenberg Marquardt Algorithm.
 """
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 # typing
 import numpy.typing as npt
@@ -70,7 +71,7 @@ class LevenbergMarquardtOptimizer():
 		return jacobianMat
 
 
-	def optimize(self, residualFunction: tp.Callable, parameterVector: npt.ArrayLike, inputVector: npt.ArrayLike, referenceVector: npt.ArrayLike) -> tp.Tuple[npt.ArrayLike,float,float,npt.ArrayLike,npt.ArrayLike,int]:
+	def optimize(self, residualFunction: tp.Callable, parameterVector: npt.ArrayLike, inputVector: npt.ArrayLike, referenceVector: npt.ArrayLike) -> tp.Tuple[npt.ArrayLike,int,float,float,npt.ArrayLike,npt.ArrayLike,int]:
 		"""Function to optimze the specified problem
 
 		Args:
@@ -81,8 +82,11 @@ class LevenbergMarquardtOptimizer():
 			referenceVector (npt.ArrayLike): 			Vector containing all reference/ground truth data.
 
 		Returns:
-			tp.Tuple[npt.ArrayLike,float,float,int]: 	A tupel of the optimal parameters, the final error of the least squares problem,
-														the mean of the residuals, the standart deviation of the parameters, the relative error of the parameters
+			tp.Tuple[npt.ArrayLike,float,float,int]: 	A tupel of the optimal parameters, the convergence/stopping reason 
+														{0: in gradient, 1: in paramerters, 2: max iterations},
+														the final error of the least squares problem,
+														the mean of the residuals, the standart deviation of the parameters,
+														the relative error of the parameters
 														and the iteration where convergence was reached.
 		"""
 
@@ -101,15 +105,22 @@ class LevenbergMarquardtOptimizer():
 		# determine the stating value of lambda
 		lamb = tau * np.max(np.diag(infMat))
 
+		# convergence reason {0: in gradient, 1: in paramerters, 2: max iterations}
+		conv = -1
+
 		# convergence condition
 		found = np.linalg.norm(grad) <= self.gradientThr
-		
+
+		SquareError = []
 		while (not found) and (iteration <= self.maxIterations) :
+			# History logging
+			SquareError.append(np.matmul(residualVector.T,residualVector))
 			# solve normal equation for parameter update
 			parameterStep = np.linalg.solve(infMat + lamb*np.diag(np.diag(infMat)), -grad)
 
 			# check for convergence in parameterStep
 			if np.linalg.norm(parameterStep) <= self.parameterStepThr*(np.linalg.norm(parameterVector) + self.parameterStepThr):
+				conv = 1
 				found = True
 			else:
 				parameterVectorNew = parameterVector + parameterStep
@@ -141,6 +152,12 @@ class LevenbergMarquardtOptimizer():
 					v = 2*v
 			iteration += 1 
 		
+		if (conv != 1) and iteration >= self.maxIterations:
+			conv = 2
+		else:
+			conv = 0
+		
+
 		# error (sensitivity analysis)
 		covar_parameters = np.linalg.inv(infMat)
 		stddev_parameters = np.sqrt(np.diag(covar_parameters))
@@ -150,7 +167,7 @@ class LevenbergMarquardtOptimizer():
 		error = np.matmul(residualVector.T,residualVector)
 		# mean of the residuals
 		meanResidual = np.sum(residualVector)/residualVector.shape[0]
-		return (parameterVector, error, meanResidual, stddev_parameters, error_parameters, iteration)
+		return (parameterVector, conv, error, meanResidual, stddev_parameters, error_parameters, iteration-1, SquareError)
 	
 
 if __name__ == "__main__":
@@ -173,8 +190,13 @@ if __name__ == "__main__":
 	initParams = np.array([1.,0.])
 	print(f"Initial params: a={initParams[0]}, b={initParams[1]}")
 	levMarq = LevenbergMarquardtOptimizer(200,1e-8,1e-8)
-	paramsOpt, error, meanResidual, stddev_parameters, error_parameters, iteration = levMarq.optimize(residualFunc,initParams,inp, y)
-	print(f"Reached convergence after {iteration} iterations.")
+	paramsOpt, conv, error, meanResidual, stddev_parameters, error_parameters, iteration, squareErrorHist = levMarq.optimize(residualFunc,initParams,inp, y)
+	if conv == 0:
+		print(f"Convergence in gradient after {iteration} iterations.")
+	elif conv == 1:
+		print(f"Convergence in parameters after {iteration} iterations.")
+	else:
+		print(f"No convergence reached after max iterations [{iteration}]!")
 	print(f"Optimized params: {paramsOpt}")
 	print(f"Final squared error: {error}")
 	print(f"Mean residuals: {meanResidual}")
@@ -182,6 +204,15 @@ if __name__ == "__main__":
 	print(f"Standard deviation params: {stddev_parameters}")
 	print(f"Standard error params: {error_parameters}")
 
+	# plot history
+	ax = plt.subplot(111)
+	ax.plot(np.linspace(0,iteration,iteration+1),squareErrorHist)
+	ax.set_title("Convergence Plot")
+	ax.set_xlabel("Iteration")
+	ax.set_ylabel("Square Error")
+	ax.set_xlim(0,iteration)
+	ax.set_ylim(bottom=0)
+	plt.show()
 
 
 	
