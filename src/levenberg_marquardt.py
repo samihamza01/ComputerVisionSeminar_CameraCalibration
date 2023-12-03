@@ -10,7 +10,7 @@ import numpy as np
 import numpy.typing as npt
 import typing as tp
 
-class LevenbergMarquardOptimizer():
+class LevenbergMarquardtOptimizer():
 	"""Levenberg Marquardt Algorithm according to madsen alg. 3.16.
 	"""
 
@@ -70,7 +70,7 @@ class LevenbergMarquardOptimizer():
 		return jacobianMat
 
 
-	def optimize(self, residualFunction: tp.Callable, parameterVector: npt.ArrayLike, inputVector: npt.ArrayLike, referenceVector: npt.ArrayLike) -> tp.Tuple[npt.ArrayLike,float,float,int]:
+	def optimize(self, residualFunction: tp.Callable, parameterVector: npt.ArrayLike, inputVector: npt.ArrayLike, referenceVector: npt.ArrayLike) -> tp.Tuple[npt.ArrayLike,float,float,npt.ArrayLike,npt.ArrayLike,int]:
 		"""Function to optimze the specified problem
 
 		Args:
@@ -82,7 +82,8 @@ class LevenbergMarquardOptimizer():
 
 		Returns:
 			tp.Tuple[npt.ArrayLike,float,float,int]: 	A tupel of the optimal parameters, the final error of the least squares problem,
-														the mean of the residuals and the iteration where convergence was reached.
+														the mean of the residuals, the standart deviation of the parameters, the relative error of the parameters
+														and the iteration where convergence was reached.
 		"""
 
 		iteration = 0
@@ -171,7 +172,7 @@ if __name__ == "__main__":
 	# initial parameter guess
 	initParams = np.array([1.,0.])
 	print(f"Initial params: a={initParams[0]}, b={initParams[1]}")
-	levMarq = LevenbergMarquardOptimizer(200,1e-8,1e-8)
+	levMarq = LevenbergMarquardtOptimizer(200,1e-8,1e-8)
 	paramsOpt, error, meanResidual, stddev_parameters, error_parameters, iteration = levMarq.optimize(residualFunc,initParams,inp, y)
 	print(f"Reached convergence after {iteration} iterations.")
 	print(f"Optimized params: {paramsOpt}")

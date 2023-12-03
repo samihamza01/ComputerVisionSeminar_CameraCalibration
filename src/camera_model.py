@@ -6,20 +6,25 @@ Python implementation of a camera model.
 
 import numpy as np
 import json
+import levenberg_marquardt as lm
 import numpy.typing as npt
 import typing as tp
 
 class CameraModel():
 	"""Camera model according to Zhang.
 	"""
-
-	def __init__(self, cameraMat: tp.Optional[npt.ArrayLike] = None, distortionVec: tp.Optional[npt.ArrayLike] = None) -> None:
+	cameraMat: npt.ArrayLike
+	distortionVec: npt.ArrayLike
+	imageSize: npt.ArrayLike
+	
+	def __init__(self, cameraMat: tp.Optional[npt.ArrayLike] = None, distortionVec: tp.Optional[npt.ArrayLike] = None, imageSize: tp.Optional[npt.ArrayLike] = None) -> None:
 		"""_summary_
 
 		Args:
 			cameraMat (tp.Optional[npt.ArrayLike]): 		Camera Matrix of the camera object. If none is given, it is set to a 3x3 matrix of zeros.
 			distortionVec (tp.Optional[npt.ArrayLike]): 	Distortion vector of the camera object containing the 3 radial and the 2 tangential coefficients.
 															If none is given, it is set to a 5x1 vector of zeros.
+			imageSize (tp.Optional[npt.ArrayLike] = None):	Size of the images used for calibration as vector of integers in x and y direction.
 
 		"""
 		if cameraMat is None:
@@ -31,6 +36,12 @@ class CameraModel():
 			self.distortionVec = np.zeros((17,1),dtype=float)
 		else:
 			self.distortionVec = distortionVec
+
+		if imageSize is None:
+			self.imageSize = np.zeros((2,1),dtype=int)
+		else:
+			self.imageSize = imageSize
+
 		return
 
 	def world_2_image(self, objectPoints: tp.List[tp.List[npt.ArrayLike]]) -> npt.ArrayLike:
@@ -67,9 +78,19 @@ class CameraModel():
 		v_rot = np.matmul(rotMat, vector)
 		return v_rot
 
-	def calibrate(self, objectPoints: tp.List[tp.List[npt.ArrayLike]], imagePoints: tp.List[tp.List[npt.ArrayLike]]):
-		# TODO
-		pass
+	def calibrate(self, objectPoints: tp.List[tp.List[npt.ArrayLike]], imagePoints: tp.List[tp.List[npt.ArrayLike]], imageSize: npt.ArrayLike):
+		levMar = lm.LevenbergMarquardtOptimizer()
+		# TODO: add homographie part for initial values-----
+		# get inial parameters via homographie
+		parameterVec = np.zeros(15,1)
+		# --------------------------------------------------
+		optimalParams,_,_,_,_,_ = levMar.optimize(self._residual_function,parameterVec,objectPoints,imagePoints)
+		self.cameraMat = np.array([	[optimalParams[0],0,optimalParams[2]],
+									[0,optimalParams[1],optimalParams[3]],
+									[0,0,1]])
+		self.distortionVec = optimalParams[4:8]
+		self.imageSize = imageSize.copy()
+		return
 	
 	def _world_2_image(self, parameterVec: npt.ArrayLike, objectPoint: npt.ArrayLike) -> npt.ArrayLike:
 		# Transform from World to Cameracoordinates
@@ -163,6 +184,9 @@ class CameraModel():
 		self.cameraMat = np.array(camData["cameraMat"])
 		self.distortionVec = np.array(camData["distortionVec"])
 		return
+
+	def undistortImage():
+		pass
 
 
 def rot_around_axis(vector: npt.NDArray[tp.Any],axis: npt.NDArray[tp.Any], angle: float) -> npt.NDArray[tp.Any]:
