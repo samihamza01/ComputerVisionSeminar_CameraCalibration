@@ -45,14 +45,19 @@ class LevenbergMarquardtOptimizer():
 		Args:
 			residualFunction (tp.Callable): 			Residualfunction. Must be a function of the parametervector (paramVector),
 														the input (inputVector) and the reference data (referenceVector).
-			parameterVector (npt.ArrayLike): 			Vector containing the function parameters.
+			parameterVector (npt.ArrayLike): 			Vector containing the function parameters (shape: (n,)).
 			inputVector (npt.ArrayLike): 				Vector of input to corresponding reference.
 			referenceVector (npt.ArrayLike): 			Vector containing all reference/ground truth data.
 
 		Returns:
 			npt.ArrayLike: Jacobian matrix.
 		"""
-		m = referenceVector.shape[0]
+		# determine size of residual vector and create it
+		m = 0
+		for a in referenceVector:
+			m += len(a)
+
+		#m = referenceVector.shape[0]
 		n = parameterVector.shape[0]
 
 		h = 1e-6
@@ -119,7 +124,9 @@ class LevenbergMarquardtOptimizer():
 			parameterStep = np.linalg.solve(infMat + lamb*np.diag(np.diag(infMat)), -grad)
 
 			# check for convergence in parameterStep
-			if np.linalg.norm(parameterStep) <= self.parameterStepThr*(np.linalg.norm(parameterVector) + self.parameterStepThr):
+			# determine max prameter step component
+			normParameterStep = np.linalg.norm(parameterStep)
+			if np.linalg.norm(parameterStep) <= self.parameterStepThr*(np.linalg.norm(parameterStep) + self.parameterStepThr):
 				conv = 1
 				found = True
 			else:
@@ -141,6 +148,7 @@ class LevenbergMarquardtOptimizer():
 					grad = np.matmul(jacobianMat.T,residualVector)
 					# check convergence in gradient
 					found = np.linalg.norm(grad) <= self.gradientThr
+					print(np.linalg.norm(grad))
 
 					# update lambda
 					lamb = lamb*np.max([1/3, 1 - (2*gain_ratio-1)**3])
@@ -154,14 +162,14 @@ class LevenbergMarquardtOptimizer():
 		
 		if (conv != 1) and iteration >= self.maxIterations:
 			conv = 2
-		else:
+		elif conv != 1:
 			conv = 0
 		
 
 		# error (sensitivity analysis)
 		covar_parameters = np.linalg.inv(infMat)
 		stddev_parameters = np.sqrt(np.diag(covar_parameters))
-		error_parameters = stddev_parameters/parameterVector
+		error_parameters = None#stddev_parameters/parameterVector
 
 		# final error of the least square problem
 		error = np.matmul(residualVector.T,residualVector)
