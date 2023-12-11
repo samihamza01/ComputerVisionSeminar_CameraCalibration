@@ -86,6 +86,57 @@ def calculate_reprojection_error(points_src, points_dst, H):
         total_error += error
     return total_error / len(points_src)
 
+
+def estimate_radial_distortion(imgpoints, objpoints, mtx, rvecs, tvecs):
+    num_points = sum([len(p) for p in imgpoints])
+    A = np.zeros((2 * num_points, 2))  # 2 equations for each point
+    b = np.zeros((2 * num_points, 1))
+
+    index = 0
+    # Convert objpoints, rvecs, tvecs, and mtx to np.float64
+
+    for i in range(len(objpoints)):
+        # Convert objpoints, rvecs, tvecs, and mtx to np.float64
+        objpoints_i = np.array(objpoints[i], dtype=np.float64).reshape(-1, 1, 2)
+        rvecs_i = np.array(rvecs[i], dtype=np.float64).reshape(-1, 1, 3)
+        tvecs_i = np.array(tvecs[i], dtype=np.float64).reshape(-1, 1, 3)
+        mtx_i = np.array(mtx, dtype=np.float64).reshape(-1, 1, 3).reshape(3, 3)
+        print(f"Parameters before using cv2.projectPoints:")
+        print(f"objpoints: {objpoints_i}")
+        print(f"rvecs: {rvecs_i}")
+        print(f"tvecs: {tvecs_i}")
+        print(f"mtx: {mtx_i}")
+        print("===================================================")
+        try:
+            projected_points, _ = cv2.projectPoints(objpoints[i], rvecs[i], tvecs[i], mtx, None)
+        except cv2.error as e:
+            error_type = "OpenCV Error"
+            context = "Error occurred during cv2.projectPoints operation"
+            input_parameters = f"objpoints: {objpoints_i}, rvecs: {rvecs_i}, tvecs: {tvecs_i}, mtx: {mtx_i}"
+            additional_details = f"Error message: {e}, Error code: {e.code}"  # If applicable
+            error_message = f"{error_type}\n{context}\n{input_parameters}\n{additional_details}"
+            print(error_message)
+        for j in range(len(projected_points)):
+            u, v = imgpoints[i][j][0][0], imgpoints[i][j][0][1]
+            u0, v0 = mtx[0, 2], mtx[1, 2]
+            x, y = projected_points[j][0][0], projected_points[j][0][1]
+
+            r2 = x**2 + y**2
+            r4 = r2**2
+
+            # Aufstellen der Gleichungen
+            A[2*index] = [(u - u0) * r2, (u - u0) * r4]
+            b[2*index] = u - x
+
+            A[2*index + 1] = [(v - v0) * r2, (v - v0) * r4]
+            b[2*index + 1] = v - y
+
+            index += 1
+
+    k, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
+
+    return k[0][0], k[1][0]
+
 # Load the chessboard image
 image_path = "../calibration_images/02.jpg"  # This path might need to be adjusted
 image = cv2.imread(image_path)
@@ -126,24 +177,32 @@ if success:
         estimated_point /= estimated_point[2]
         cv2.circle(image, tuple(estimated_point[0:2].ravel().astype(int)), 5, (255, 0, 0), 2)
 
-    # Display the image with the visualization of the reprojection error
+    # Display the image with the visualization of the reprojection errorl
     cv2.imshow('Chessboard Corners with Reprojection Error', image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
+    #print("World Corners:")
+    #print(world_corners)
+    #print("Found Corners:")
+    #print(found_corners_refined)
+
     print("Homography Matrix:")
     print(homography_matrix)
-
     print("Intrinsic Camera Matrix A:")
     print(A)
-
     print("Rotation Matrix R:")
     print(R)
-
     print("Translation Vector t:")
     print(t)
+    print("======================================")
+    # Estimate the radial distortion parameters
+    k1, k2 = estimate_radial_distortion([found_corners_refined], [world_corners], A, [R], [t])
+
+    # Display the estimated parameters
 
     print("Reprojection Error:")
     print(reprojection_error)
+    print("Estimated Radial Distortion Parameters k1, k2:", k1, k2)
 else:
     print("Corners not found")
