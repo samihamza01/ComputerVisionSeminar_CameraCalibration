@@ -36,7 +36,7 @@ cv.destroyAllWindows()
 
 # Calibrate with OpenCV
 ret, mtx, dist, rvecs, tvecs = cv.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
-
+print(tvecs)
 # Calibrate with own implementation
 cam = cm.CameraModel()
 cam.calibrate(objpoints,imgpoints,gray.shape[0:1])

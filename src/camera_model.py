@@ -17,7 +17,12 @@ class CameraModel():
 	cameraMat: npt.ArrayLike
 	distortionVec: npt.ArrayLike
 	imageSize: tp.Tuple[int,int]
+
+	# calibration specific attributes
 	calibrationDataStructure: list
+	residualParamBuffer: npt.ArrayLike
+	residualBuffer: npt.ArrayLike
+
 	
 	def __init__(self, cameraMat: tp.Optional[npt.ArrayLike] = None, distortionVec: tp.Optional[npt.ArrayLike] = None, imageSize: tp.Optional[tp.Tuple[int,int]] = None) -> None:
 		"""_summary_
@@ -79,10 +84,6 @@ class CameraModel():
 		# tangential component
 		distTanX = 2*self.distortionVec[3]*normImgPoint[0]*normImgPoint[1] + self.distortionVec[4]*(r_square + 2*normImgPoint[0]**2)
 		distTanY = 2*self.distortionVec[4]*normImgPoint[0]*normImgPoint[1] + self.distortionVec[3]*(r_square + 2*normImgPoint[1]**2)
-
-		# # thin prism component
-		# distPrismX = parameterVec[9]*r_square + parameterVec[10]*r_square**2
-		# distPrismY = parameterVec[11]*r_square + parameterVec[12]*r_square**2
 
 		normDistImgPoint = np.array([	distRadX + distTanX,
 										distRadY + distTanY,
@@ -211,6 +212,8 @@ class CameraModel():
 				serCounter += 1
 
 		# start optimization
+		# call _residual_function with initCall=True befor optimization
+		self._residual_function(parameterVec,objectPointsSer,imagePointsSer,initCall=True)
 		optimalParams, conv, error, meanResidual, _, _, iteration, squareErrorHist = levMar.optimize(self._residual_function,parameterVec,objectPointsSer,imagePointsSer)
 		self.cameraMat = np.array([	[optimalParams[0],0,optimalParams[2]],
 									[0,optimalParams[1],optimalParams[3]],
@@ -271,10 +274,6 @@ class CameraModel():
 		distTanX = 2*parameterVec[7]*normImgPoint[0]*normImgPoint[1] + parameterVec[8]*(r_square + 2*normImgPoint[0]**2)
 		distTanY = 2*parameterVec[8]*normImgPoint[0]*normImgPoint[1] + parameterVec[7]*(r_square + 2*normImgPoint[1]**2)
 
-		# # thin prism component
-		# distPrismX = parameterVec[9]*r_square + parameterVec[10]*r_square**2
-		# distPrismY = parameterVec[11]*r_square + parameterVec[12]*r_square**2
-
 		normDistImgPoint = np.array([	distRadX + distTanX,
 										distRadY + distTanY,
 										1])
@@ -287,38 +286,49 @@ class CameraModel():
 
 		return imgPoint
 
-	def _residual_function(self, parameterVec: npt.ArrayLike, objectPoints: tp.List[tp.List[npt.ArrayLike]], imagePoints: tp.List[tp.List[npt.ArrayLike]]) -> npt.ArrayLike:
-		"""Function calculating the residual vector for optimization with Levenberg Marquardt.
+	def _residual_function(self, parameterVec: npt.ArrayLike, objectPoints: npt.ArrayLike, imagePoints: npt.ArrayLike, initCall: tp.Optional[bool] = False) -> npt.ArrayLike:
+		"""Function calculating the residual vector for optimization with Levenberg Marquardt. Must be called with `initCall = True` before first use in calibration.
 
 		Args:
 			parameterVec (npt.ArrayLike): Parameter vector containing (fx,fy,cx,cy,k1,k2,k3,p1,p2,r1,r2,r3,t1,t2,t3).
-			objectPoints (tp.List[tp.List[npt.ArrayLike]]): Object point list, where the outer list contains the view sets and the inner list contains the points per view.
-			imagePoints (tp.List[tp.List[npt.ArrayLike]]): Image point list, where the outer list contains the view sets and the inner list contains the points per view. 
+			objectPoints (npt.ArrayLike): Object point list, where the outer list contains the view sets and the inner list contains the points per view.
+			imagePoints (npt.ArrayLike): Image point list, where the outer list contains the view sets and the inner list contains the points per view. 
+			initCall (tp.Optional[bool]): indicating if it is the first call in the calibration.
 
 		Returns:
 			npt.ArrayLike: Residual Vector.
 		"""
 		# determine size of residual vector and create it
-		length = objectPoints.shape[0]
-		residualVec = np.zeros((length,))
+		if initCall==True:
+			length = objectPoints.shape[0]
+			residualVec = np.zeros((length,))
+		else:
+			residualVec = self.residualBuffer.copy()
+
+		# try to find a way to reduce calculations in jacobian
+		# only compute full residual vector, if:
+		# 1) camera matrix
+		# 2) dist coeff have changed
+		# else compute only the view where params have changed
+		
+		if not initCall and (parameterVec[0:9]==self.residualParamBuffer[0:9]).all():
+			computeAll = False
+		else:
+			computeAll = True
 
 		# parameter vector
 		parameterViewVector = np.zeros(15,)
 		parameterViewVector[0:9] = parameterVec[0:9]
 
 		# calculate residual vector
-		idxResidual = 0
 		paramOffset =  len(self.calibrationDataStructure)*3 + 8
-		# for idxView, elementView in enumerate(objectPoints):
-		# 	# get current view params
-		# 	parameterViewVector[9:12] =  parameterVec[8+3*idxView+1:11+idxView*3+1]
-		# 	parameterViewVector[12:15] =  parameterVec[paramOffset+3*+idxView+1:paramOffset+3+3*idxView+1]
-		# 	for idxPoint, elementPoint in enumerate(elementView):
-		# 		estimatedPoint = self._world_2_image(parameterViewVector,objectPoints[idxView][idxPoint])
-		# 		residualVec[idxResidual] = np.linalg.norm(imagePoints[idxView][idxPoint] - estimatedPoint)
-		# 		idxResidual += 1
+
 		viewOffset = 0
 		for idxView, elementsPerView in enumerate(self.calibrationDataStructure):
+			# check if current view params have changed
+			if not computeAll and ((parameterVec[8+3*idxView+1:11+idxView*3+1]==self.residualParamBuffer[8+3*idxView+1:11+idxView*3+1]).all() and (parameterVec[paramOffset+3*+idxView+1:paramOffset+3+3*idxView+1]==self.residualParamBuffer[paramOffset+3*+idxView+1:paramOffset+3+3*idxView+1]).all()):
+				viewOffset += elementsPerView 
+				continue
 			# get current view params
 			parameterViewVector[9:12] =  parameterVec[8+3*idxView+1:11+idxView*3+1]
 			parameterViewVector[12:15] =  parameterVec[paramOffset+3*+idxView+1:paramOffset+3+3*idxView+1]
@@ -327,6 +337,8 @@ class CameraModel():
 				residualVec[idxPoint+viewOffset] = np.linalg.norm(imagePoints[idxPoint+viewOffset] - estimatedPoint)
 			viewOffset += elementsPerView 
 
+		self.residualBuffer = residualVec.copy()
+		self.residualParamBuffer = parameterVec.copy()
 		return residualVec
 
 	def _calibration_plot_reprojection_error(self, parameterVec: npt.ArrayLike, objectPoints: tp.List[tp.List[npt.ArrayLike]], imagePoints: tp.List[tp.List[npt.ArrayLike]]):
@@ -338,7 +350,7 @@ class CameraModel():
 		Args:
 			path (str): Realtive or absolute path and filename to store the file in (e.g. ~/camData.json).
 		"""
-		camData = {"cameraMat": self.cameraMat.tolist(), "distortionVec": self.distortionVec.tolist()}
+		camData = {"cameraMat": self.cameraMat.tolist(), "distortionVec": self.distortionVec.tolist(), "imageSize": list(self.imageSize)}
 		with open(path,'w') as f:
 			json.dump(camData,f)
 		return
@@ -353,6 +365,7 @@ class CameraModel():
 			camData = json.load(f)
 		self.cameraMat = np.array(camData["cameraMat"])
 		self.distortionVec = np.array(camData["distortionVec"])
+		self.imageSize = tuple(camData["imageSize"])
 		return
 
 	def undistortImage():
