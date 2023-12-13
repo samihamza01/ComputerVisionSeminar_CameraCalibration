@@ -52,12 +52,9 @@ class LevenbergMarquardtOptimizer():
 		Returns:
 			npt.ArrayLike: Jacobian matrix.
 		"""
-		# determine size of residual vector and create it
-		m = 0
-		for a in referenceVector:
-			m += len(a)
+		
 
-		#m = referenceVector.shape[0]
+		m = referenceVector.shape[0]
 		n = parameterVector.shape[0]
 
 		h = 1e-6
@@ -114,7 +111,7 @@ class LevenbergMarquardtOptimizer():
 		conv = -1
 
 		# convergence condition
-		found = np.linalg.norm(grad) <= self.gradientThr
+		found = np.max(np.abs(grad)) <= self.gradientThr
 
 		SquareError = []
 		while (not found) and (iteration <= self.maxIterations) :
@@ -124,9 +121,9 @@ class LevenbergMarquardtOptimizer():
 			parameterStep = np.linalg.solve(infMat + lamb*np.diag(np.diag(infMat)), -grad)
 
 			# check for convergence in parameterStep
-			# determine max prameter step component
-			normParameterStep = np.linalg.norm(parameterStep)
-			if np.linalg.norm(parameterStep) <= self.parameterStepThr*(np.linalg.norm(parameterStep) + self.parameterStepThr):
+			# determine infinitynorm
+			infnormParameterStep = np.max(np.abs(parameterStep))
+			if infnormParameterStep <= self.parameterStepThr*(infnormParameterStep + self.parameterStepThr):
 				conv = 1
 				found = True
 			else:
@@ -147,8 +144,7 @@ class LevenbergMarquardtOptimizer():
 					infMat = np.matmul(jacobianMat.T,jacobianMat)
 					grad = np.matmul(jacobianMat.T,residualVector)
 					# check convergence in gradient
-					found = np.linalg.norm(grad) <= self.gradientThr
-					print(np.linalg.norm(grad))
+					found = np.max(np.abs(grad)) <= self.gradientThr
 
 					# update lambda
 					lamb = lamb*np.max([1/3, 1 - (2*gain_ratio-1)**3])

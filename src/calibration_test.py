@@ -34,10 +34,21 @@ for fname in images:
 cv.destroyAllWindows()
 
 
-# create cam object
+# Calibrate with OpenCV
+ret, mtx, dist, rvecs, tvecs = cv.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
+
+# Calibrate with own implementation
 cam = cm.CameraModel()
 cam.calibrate(objpoints,imgpoints,gray.shape[0:1])
 cam.save_cam_to_json("test.json")
+
+print("Comparison OpenCV and Own Implementation")
+print("Camera Matrix")
+print(f"OpenCV:\t{mtx}")
+print(f"OwnImpl:\t{cam.cameraMat}")
+print("Distortion Coefficients")
+print(f"OpenCV:\t\tk1={dist[0][0]}, k2={dist[0][1]}, k3={dist[0][4]}, p1={dist[0][2]}, p2={dist[0][3]}")
+print(f"OwnImpl:\tk1={cam.distortionVec[0]}, k2={cam.distortionVec[1]}, k3={cam.distortionVec[2]}, p1={cam.distortionVec[3]}, p2={cam.distortionVec[4]}")
 
 
 

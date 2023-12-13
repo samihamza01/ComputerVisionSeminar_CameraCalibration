@@ -17,8 +17,9 @@ class CameraModel():
 	cameraMat: npt.ArrayLike
 	distortionVec: npt.ArrayLike
 	imageSize: tp.Tuple[int,int]
+	calibrationDataStructure: list
 	
-	def __init__(self, cameraMat: tp.Optional[npt.ArrayLike] = None, distortionVec: tp.Optional[npt.ArrayLike] = None, imageSize: tp.Optional[npt.ArrayLike] = None) -> None:
+	def __init__(self, cameraMat: tp.Optional[npt.ArrayLike] = None, distortionVec: tp.Optional[npt.ArrayLike] = None, imageSize: tp.Optional[tp.Tuple[int,int]] = None) -> None:
 		"""_summary_
 
 		Args:
@@ -34,12 +35,12 @@ class CameraModel():
 			self.cameraMat = cameraMat
 
 		if distortionVec is None:
-			self.distortionVec = np.zeros((17,1),dtype=float)
+			self.distortionVec = np.zeros((17,),dtype=float)
 		else:
 			self.distortionVec = distortionVec
 
 		if imageSize is None:
-			self.imageSize = np.zeros((2,1),dtype=int)
+			self.imageSize = (0,0)
 		else:
 			self.imageSize = imageSize
 
@@ -123,7 +124,7 @@ class CameraModel():
 		return v_rot
 
 	def calibrate(self, objectPoints: tp.List[tp.List[npt.ArrayLike]], imagePoints: tp.List[tp.List[npt.ArrayLike]], imageSize: tp.Tuple[int,int], verbose: tp.Optional[bool] = False) -> None:
-		levMar = lm.LevenbergMarquardtOptimizer(maxIterations=50)
+		levMar = lm.LevenbergMarquardtOptimizer(maxIterations=40,parameterStepThr=1e-5,gradientThr=1e-5)
 		# TODO: add homographie part for initial values-----
 		# get inial parameters via homographie
 		# for now hardcoded data of matlab dataset
@@ -191,10 +192,31 @@ class CameraModel():
 		parameterVec[61] =  31.035
 		parameterVec[62] =  724.86
 		# --------------------------------------------------
-		optimalParams, conv, error, meanResidual, _, _, iteration, squareErrorHist = levMar.optimize(self._residual_function,parameterVec,objectPoints,imagePoints)
+
+		# get calibration data structure and length
+		self.calibrationDataStructure = []
+		length = 0
+		for view in objectPoints:
+			self.calibrationDataStructure.append(len(view))
+			length += len(view)
+
+		# serialize the object and image data
+		objectPointsSer = np.zeros((length,3))
+		imagePointsSer = np.zeros((length,2))
+		serCounter = 0
+		for viewIdx, pointsPerView in enumerate(self.calibrationDataStructure):
+			for pointIdx in range(0,pointsPerView):
+				objectPointsSer[serCounter][:] = objectPoints[viewIdx][pointIdx]
+				imagePointsSer[serCounter][:] = imagePoints[viewIdx][pointIdx]
+				serCounter += 1
+
+		# start optimization
+		optimalParams, conv, error, meanResidual, _, _, iteration, squareErrorHist = levMar.optimize(self._residual_function,parameterVec,objectPointsSer,imagePointsSer)
 		self.cameraMat = np.array([	[optimalParams[0],0,optimalParams[2]],
 									[0,optimalParams[1],optimalParams[3]],
 									[0,0,1]])
+
+		# show result and store camera data
 		self.distortionVec = optimalParams[4:9]
 		self.imageSize = imageSize
 		if conv == 0:
@@ -277,10 +299,7 @@ class CameraModel():
 			npt.ArrayLike: Residual Vector.
 		"""
 		# determine size of residual vector and create it
-		length = 0
-		for a in objectPoints:
-			length += len(a)
-
+		length = objectPoints.shape[0]
 		residualVec = np.zeros((length,))
 
 		# parameter vector
@@ -289,15 +308,24 @@ class CameraModel():
 
 		# calculate residual vector
 		idxResidual = 0
-		paramOffset =  len(objectPoints)*3 + 8
-		for idxView, elementView in enumerate(objectPoints):
+		paramOffset =  len(self.calibrationDataStructure)*3 + 8
+		# for idxView, elementView in enumerate(objectPoints):
+		# 	# get current view params
+		# 	parameterViewVector[9:12] =  parameterVec[8+3*idxView+1:11+idxView*3+1]
+		# 	parameterViewVector[12:15] =  parameterVec[paramOffset+3*+idxView+1:paramOffset+3+3*idxView+1]
+		# 	for idxPoint, elementPoint in enumerate(elementView):
+		# 		estimatedPoint = self._world_2_image(parameterViewVector,objectPoints[idxView][idxPoint])
+		# 		residualVec[idxResidual] = np.linalg.norm(imagePoints[idxView][idxPoint] - estimatedPoint)
+		# 		idxResidual += 1
+		viewOffset = 0
+		for idxView, elementsPerView in enumerate(self.calibrationDataStructure):
 			# get current view params
 			parameterViewVector[9:12] =  parameterVec[8+3*idxView+1:11+idxView*3+1]
 			parameterViewVector[12:15] =  parameterVec[paramOffset+3*+idxView+1:paramOffset+3+3*idxView+1]
-			for idxPoint, elementPoint in enumerate(elementView):
-				estimatedPoint = self._world_2_image(parameterViewVector,objectPoints[idxView][idxPoint])
-				residualVec[idxResidual] = np.linalg.norm(imagePoints[idxView][idxPoint] - estimatedPoint)
-				idxResidual += 1
+			for idxPoint in range(0,elementsPerView):
+				estimatedPoint = self._world_2_image(parameterViewVector,objectPoints[idxPoint+viewOffset])
+				residualVec[idxPoint+viewOffset] = np.linalg.norm(imagePoints[idxPoint+viewOffset] - estimatedPoint)
+			viewOffset += elementsPerView 
 
 		return residualVec
 
@@ -336,8 +364,4 @@ if __name__ == "__main__":
 	cam = CameraModel()
 	cam.save_cam_to_json("test.json")
 	cam.load_cam_from_json("test.json")
-
-	a = np.array([0,1,2,3,4])
-	print(a[0:5])
-
 	
