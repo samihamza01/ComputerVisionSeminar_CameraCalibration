@@ -404,13 +404,70 @@ class CameraModel():
 		self.imageSize = tuple(camData["imageSize"])
 		return
 
-	def undistortImage():
-		pass
+	def undistort_image(self, image):
+		pix_v, pix_u, channels = image.shape
+
+		pixel_coords_uv=np.ones((3,pix_u*pix_v))
+		pixel_coords_uv[0:2][:] = np.mgrid[0:pix_u,0:pix_v].reshape(2,-1)
+		# project image points to normalised image plane
+		inv_camera_matrix = np.linalg.inv(self.cameraMat)
+		norm_img_point = np.matmul(inv_camera_matrix[0:2][:],pixel_coords_uv)
+
+		# Add distortion
+		# Radius
+		r_square = norm_img_point[0]**2+norm_img_point[1]**2
+
+		# radial component
+		dist_rad_x = norm_img_point[0][:]*(1 + self.distortionVec[0]*r_square + self.distortionVec[1]*r_square**2 + self.distortionVec[2]*r_square**3)
+		dist_rad_y = norm_img_point[1][:]*(1 + self.distortionVec[0]*r_square + self.distortionVec[1]*r_square**2 + self.distortionVec[2]*r_square**3)
+
+		# tangential component
+		dist_tan_x = 2*self.distortionVec[3]*norm_img_point[0][:]*norm_img_point[1][:] + self.distortionVec[4]*(r_square + 2*norm_img_point[0][:]**2)
+		dist_tan_y = 2*self.distortionVec[4]*norm_img_point[0][:]*norm_img_point[1][:] + self.distortionVec[3]*(r_square + 2*norm_img_point[1][:]**2)
+
+		norm_dist_img_points = np.ones((3,pix_v*pix_u))
+		norm_dist_img_points[0][:] = dist_rad_x + dist_tan_x
+		norm_dist_img_points[1][:] = dist_rad_y + dist_tan_y
+
+		# project distorted points back into image plane
+		dist_img_points = np.matmul(self.cameraMat[0:2][:],norm_dist_img_points)
+
+		# search corresponding pixels for undistorted image pixels
+		undistorted_image = np.zeros((pix_v,pix_u,channels),dtype=np.uint8)
+		for idx_point in range(0,pixel_coords_uv.shape[1]):
+			# interpolation nearest neighbour
+			idx_u = round(dist_img_points[0][idx_point])
+			idx_v = round(dist_img_points[1][idx_point])
+			if idx_u < 0 or idx_u >= pix_u or idx_v < 0 or idx_v >= pix_v:
+				continue
+		
+			undistorted_image[int(pixel_coords_uv[1][idx_point])][int(pixel_coords_uv[0][idx_point])][:] = image[idx_v][idx_u][:]
+
+		return undistorted_image
 
 import os
 
 if __name__ == "__main__":
+	import cv2 as cv
+	from PIL import Image
+
 	cam = CameraModel()
-	cam.save_cam_to_json("test.json")
 	cam.load_cam_from_json("test.json")
+	images = os.listdir("C:/Program Files/MATLAB/R2022b/toolbox/vision/visiondata/calibration/slr")
+	
+	img = cv.imread("C:/Program Files/MATLAB/R2022b/toolbox/vision/visiondata/calibration/slr/"+images[8])
+	print("undistort")
+	undist_img = cam.undistort_image(img)
+	undist_imgCV = cv.undistort(img,cam.cameraMat,np.array([-0.12738252944738393, 3.5618105460409875, 0.001349150310633028, 0.003222936007497777, -34.653996453142]))
+	undist_img = cv.resize(undist_img,(int(undist_img.shape[1]*0.3),int(undist_img.shape[0]*0.3)))
+	img = cv.resize(img,(int(img.shape[1]*0.3),int(img.shape[0]*0.3)))
+	undist_imgCV = cv.resize(undist_imgCV,(int(undist_imgCV.shape[1]*0.3),int(undist_imgCV.shape[0]*0.3)))
+	cv.imshow("image",img)
+	cv.waitKey(0)
+
+	cv.imshow("undistorted image",undist_imgCV)
+	cv.waitKey(0)	
+	cv.imshow("undistorted image",undist_img)
+	cv.waitKey(0)	
+	
 	
