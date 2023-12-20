@@ -124,7 +124,7 @@ class CameraModel():
 		v_rot = np.matmul(rotMat, vector)
 		return v_rot
 
-	def calibrate(self, objectPoints: tp.List[tp.List[npt.ArrayLike]], imagePoints: tp.List[tp.List[npt.ArrayLike]], imageSize: tp.Tuple[int,int], rVecs: tp.Optional[tp.List[npt.ArrayLike]] = None, tVecs: tp.Optional[tp.List[npt.ArrayLike]] = None, cameraMatrix: tp.Optional[npt.ArrayLike] = None, verbose: tp.Optional[bool] = False) -> tp.Tuple[float,tp.List[npt.ArrayLike],tp.List[npt.ArrayLike]]:
+	def calibrate(self, objectPoints: tp.List[tp.List[npt.ArrayLike]], imagePoints: tp.List[tp.List[npt.ArrayLike]], imageSize: tp.Tuple[int,int], cameraMatrix: tp.Optional[npt.ArrayLike] = None, rVecs: tp.Optional[tp.List[npt.ArrayLike]] = None, tVecs: tp.Optional[tp.List[npt.ArrayLike]] = None, verbose: tp.Optional[bool] = False) -> tp.Tuple[float,tp.List[npt.ArrayLike],tp.List[npt.ArrayLike]]:
 		# Perform some input parameter checks
 		if rVecs == None and tVecs == None and cameraMatrix == None:
 			estimateInitGuess = True
@@ -445,11 +445,10 @@ class CameraModel():
 
 		return undistorted_image
 
-import os
 
 if __name__ == "__main__":
 	import cv2 as cv
-	from PIL import Image
+	import os
 
 	cam = CameraModel()
 	cam.load_cam_from_json("test.json")
