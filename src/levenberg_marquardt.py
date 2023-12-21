@@ -57,10 +57,10 @@ class LevenbergMarquardtOptimizer():
 		m = referenceVector.shape[0]
 		n = parameterVector.shape[0]
 
-		h = 1e-6
-		eye = np.eye(n) * h
+		h = 1e-8
+		eye = np.eye(n,dtype=np.float64) * h
 
-		jacobianMat = np.zeros(shape=(m, n))
+		jacobianMat = np.zeros(shape=(m, n),dtype=np.float64)
 
 		for i, _ in enumerate(parameterVector):
 			
@@ -94,7 +94,7 @@ class LevenbergMarquardtOptimizer():
 
 		iteration = 0
 		v = 2
-		tau = 1e-3
+		tau = 1e-13
 		
 		# calculate jacobian
 		jacobianMat = self._cal_jacobian(residualFunction, parameterVector, inputVector, referenceVector)
@@ -121,9 +121,7 @@ class LevenbergMarquardtOptimizer():
 			parameterStep = np.linalg.solve(infMat + lamb*np.diag(np.diag(infMat)), -grad)
 
 			# check for convergence in parameterStep
-			# determine infinitynorm
-			infnormParameterStep = np.max(np.abs(parameterStep))
-			if infnormParameterStep <= self.parameterStepThr*(infnormParameterStep + self.parameterStepThr):
+			if np.linalg.norm(parameterStep) <= self.parameterStepThr*(np.linalg.norm(parameterVector) + self.parameterStepThr):
 				conv = 1
 				found = True
 			else:
@@ -131,7 +129,7 @@ class LevenbergMarquardtOptimizer():
 				# calculate gain ratio
 				residualVectorNew = residualFunction(parameterVectorNew, inputVector, referenceVector)
 				change = np.matmul(residualVector.T,residualVector) - np.matmul(residualVectorNew.T,residualVectorNew)
-				estimatedChange = np.matmul(parameterStep.T, lamb*parameterStep - np.matmul(jacobianMat.T,residualVector))
+				estimatedChange = np.matmul(parameterStep.T, lamb*np.matmul(np.diag(np.diag(infMat)),parameterStep) - grad)
 				gain_ratio = change/estimatedChange
 
 				if gain_ratio > 0:
@@ -193,7 +191,7 @@ if __name__ == "__main__":
 	# initial parameter guess
 	initParams = np.array([1.,0.])
 	print(f"Initial params: a={initParams[0]}, b={initParams[1]}")
-	levMarq = LevenbergMarquardtOptimizer(200,1e-8,1e-8)
+	levMarq = LevenbergMarquardtOptimizer(30,1e-8,1e-8)
 	paramsOpt, conv, error, meanResidual, stddev_parameters, error_parameters, iteration, squareErrorHist = levMarq.optimize(residualFunc,initParams,inp, y)
 	if conv == 0:
 		print(f"Convergence in gradient after {iteration} iterations.")

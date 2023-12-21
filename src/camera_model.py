@@ -126,9 +126,9 @@ class CameraModel():
 
 	def calibrate(self, objectPoints: tp.List[tp.List[npt.ArrayLike]], imagePoints: tp.List[tp.List[npt.ArrayLike]], imageSize: tp.Tuple[int,int], cameraMatrix: tp.Optional[npt.ArrayLike] = None, rVecs: tp.Optional[tp.List[npt.ArrayLike]] = None, tVecs: tp.Optional[tp.List[npt.ArrayLike]] = None, verbose: tp.Optional[bool] = False) -> tp.Tuple[float,tp.List[npt.ArrayLike],tp.List[npt.ArrayLike]]:
 		# Perform some input parameter checks
-		if rVecs == None and tVecs == None and cameraMatrix == None:
+		if rVecs is None and tVecs is None and cameraMatrix is None:
 			estimateInitGuess = True
-		elif rVecs != None and tVecs != None and cameraMatrix != None:
+		elif rVecs is not None and tVecs is not None and cameraMatrix is not None:
 			estimateInitGuess = False
 			if len(objectPoints) != len(rVecs) or len(objectPoints) != len(tVecs):
 				raise ValueError("Translation and rotation vectors must have same length as the number of views (images).")
@@ -144,12 +144,14 @@ class CameraModel():
 			self.calibrationDataStructure.append(len(view))
 			length += len(view)
 		
+		numViews = len(objectPoints)
+		parameterVec = np.zeros((9+6*numViews,),dtype=np.float64)
+
 		if estimateInitGuess:
 			# TODO: add homographie part for initial values-----
 			# get inial parameters via homographie
 			# for now hardcoded data of matlab dataset
-			numViews = len(objectPoints)
-			parameterVec = np.zeros((9+6*numViews,))
+			
 			parameterVec[0] = 4.5e3
 			parameterVec[1] = 4.6e3
 			parameterVec[2] = 1.4e3
@@ -212,12 +214,12 @@ class CameraModel():
 			parameterVec[61] =  31.035
 			parameterVec[62] =  724.86
 		else:
-			parameterVec[0] = cameraMatrix[0][0]
-			parameterVec[1] = cameraMatrix[1][1]
-			parameterVec[2] = cameraMatrix[0][2]
-			parameterVec[3] = cameraMatrix[1][2]
+			parameterVec[0] = cameraMatrix[0,0]
+			parameterVec[1] = cameraMatrix[1,1]
+			parameterVec[2] = cameraMatrix[0,2]
+			parameterVec[3] = cameraMatrix[1,2]
 			
-			t_offset = len(objectPoints)*3
+			t_offset = len(objectPoints)*3 + 9
 			for viewIdx in range(0,len(objectPoints)):
 				parameterVec[9+viewIdx*3:12+viewIdx*3] = rVecs[viewIdx][:]
 				parameterVec[t_offset+viewIdx*3:t_offset+3+viewIdx*3] = tVecs[viewIdx][:]
@@ -225,7 +227,7 @@ class CameraModel():
 		
 		# Optimization ----------------------------------------
 		# create optimzer
-		levMar = lm.LevenbergMarquardtOptimizer(maxIterations=40,parameterStepThr=1e-5,gradientThr=1e-5)
+		levMar = lm.LevenbergMarquardtOptimizer(maxIterations=35,parameterStepThr=1e-8,gradientThr=1e-6)
 
 		# serialize the object and image data
 		objectPointsSer = np.zeros((length,3))
@@ -318,7 +320,7 @@ class CameraModel():
 		camMat = np.array([	[parameterVec[0],0,parameterVec[2]],
 							[0,parameterVec[1],parameterVec[3]],
 							[0,0,1]])
-		imgPoint = np.matmul(camMat[0:2][:],normDistImgPoint)
+		imgPoint = np.matmul(camMat[0:2,:],normDistImgPoint)
 
 		return imgPoint
 
@@ -337,7 +339,7 @@ class CameraModel():
 		# determine size of residual vector and create it
 		if initCall==True:
 			length = objectPoints.shape[0]
-			residualVec = np.zeros((length,))
+			residualVec = np.zeros((length,),dtype=np.float64)
 		else:
 			residualVec = self.residualBuffer.copy()
 
@@ -353,7 +355,7 @@ class CameraModel():
 			computeAll = True
 
 		# parameter vector
-		parameterViewVector = np.zeros(15,)
+		parameterViewVector = np.zeros((15,),dtype=np.float64)
 		parameterViewVector[0:9] = parameterVec[0:9]
 
 		# calculate residual vector
@@ -408,65 +410,45 @@ class CameraModel():
 		pix_v, pix_u, channels = image.shape
 
 		pixel_coords_uv=np.ones((3,pix_u*pix_v))
-		pixel_coords_uv[0:2][:] = np.mgrid[0:pix_u,0:pix_v].reshape(2,-1)
+		pixel_coords_uv[0:2,:] = np.mgrid[0:pix_u,0:pix_v].reshape(2,-1)
 		# project image points to normalised image plane
 		inv_camera_matrix = np.linalg.inv(self.cameraMat)
-		norm_img_point = np.matmul(inv_camera_matrix[0:2][:],pixel_coords_uv)
+		norm_img_point = np.matmul(inv_camera_matrix[0:2,:],pixel_coords_uv)
 
 		# Add distortion
 		# Radius
 		r_square = norm_img_point[0]**2+norm_img_point[1]**2
 
 		# radial component
-		dist_rad_x = norm_img_point[0][:]*(1 + self.distortionVec[0]*r_square + self.distortionVec[1]*r_square**2 + self.distortionVec[2]*r_square**3)
-		dist_rad_y = norm_img_point[1][:]*(1 + self.distortionVec[0]*r_square + self.distortionVec[1]*r_square**2 + self.distortionVec[2]*r_square**3)
+		dist_rad_x = norm_img_point[0,:]*(1 + self.distortionVec[0]*r_square + self.distortionVec[1]*r_square**2 + self.distortionVec[2]*r_square**3)
+		dist_rad_y = norm_img_point[1,:]*(1 + self.distortionVec[0]*r_square + self.distortionVec[1]*r_square**2 + self.distortionVec[2]*r_square**3)
 
 		# tangential component
-		dist_tan_x = 2*self.distortionVec[3]*norm_img_point[0][:]*norm_img_point[1][:] + self.distortionVec[4]*(r_square + 2*norm_img_point[0][:]**2)
-		dist_tan_y = 2*self.distortionVec[4]*norm_img_point[0][:]*norm_img_point[1][:] + self.distortionVec[3]*(r_square + 2*norm_img_point[1][:]**2)
+		dist_tan_x = 2*self.distortionVec[3]*norm_img_point[0,:]*norm_img_point[1,:] + self.distortionVec[4]*(r_square + 2*norm_img_point[0,:]**2)
+		dist_tan_y = 2*self.distortionVec[4]*norm_img_point[0,:]*norm_img_point[1,:] + self.distortionVec[3]*(r_square + 2*norm_img_point[1,:]**2)
 
 		norm_dist_img_points = np.ones((3,pix_v*pix_u))
-		norm_dist_img_points[0][:] = dist_rad_x + dist_tan_x
-		norm_dist_img_points[1][:] = dist_rad_y + dist_tan_y
+		norm_dist_img_points[0,:] = dist_rad_x + dist_tan_x
+		norm_dist_img_points[1,:] = dist_rad_y + dist_tan_y
 
 		# project distorted points back into image plane
-		dist_img_points = np.matmul(self.cameraMat[0:2][:],norm_dist_img_points)
+		dist_img_points = np.matmul(self.cameraMat[0:2,:],norm_dist_img_points)
 
 		# search corresponding pixels for undistorted image pixels
 		undistorted_image = np.zeros((pix_v,pix_u,channels),dtype=np.uint8)
 		for idx_point in range(0,pixel_coords_uv.shape[1]):
 			# interpolation nearest neighbour
-			idx_u = round(dist_img_points[0][idx_point])
-			idx_v = round(dist_img_points[1][idx_point])
+			idx_u = round(dist_img_points[0,idx_point])
+			idx_v = round(dist_img_points[1,idx_point])
 			if idx_u < 0 or idx_u >= pix_u or idx_v < 0 or idx_v >= pix_v:
 				continue
 		
-			undistorted_image[int(pixel_coords_uv[1][idx_point])][int(pixel_coords_uv[0][idx_point])][:] = image[idx_v][idx_u][:]
+			undistorted_image[int(pixel_coords_uv[1,idx_point]),int(pixel_coords_uv[0,idx_point]),:] = image[idx_v,idx_u,:]
 
 		return undistorted_image
 
 
 if __name__ == "__main__":
-	import cv2 as cv
-	import os
-
-	cam = CameraModel()
-	cam.load_cam_from_json("test.json")
-	images = os.listdir("C:/Program Files/MATLAB/R2022b/toolbox/vision/visiondata/calibration/slr")
-	
-	img = cv.imread("C:/Program Files/MATLAB/R2022b/toolbox/vision/visiondata/calibration/slr/"+images[8])
-	print("undistort")
-	undist_img = cam.undistort_image(img)
-	undist_imgCV = cv.undistort(img,cam.cameraMat,np.array([-0.12738252944738393, 3.5618105460409875, 0.001349150310633028, 0.003222936007497777, -34.653996453142]))
-	undist_img = cv.resize(undist_img,(int(undist_img.shape[1]*0.3),int(undist_img.shape[0]*0.3)))
-	img = cv.resize(img,(int(img.shape[1]*0.3),int(img.shape[0]*0.3)))
-	undist_imgCV = cv.resize(undist_imgCV,(int(undist_imgCV.shape[1]*0.3),int(undist_imgCV.shape[0]*0.3)))
-	cv.imshow("image",img)
-	cv.waitKey(0)
-
-	cv.imshow("undistorted image",undist_imgCV)
-	cv.waitKey(0)	
-	cv.imshow("undistorted image",undist_img)
-	cv.waitKey(0)	
+	pass
 	
 	
