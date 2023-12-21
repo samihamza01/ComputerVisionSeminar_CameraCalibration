@@ -28,52 +28,55 @@ def compute_homography(points_src, points_dst):
 
     # The solution is the last vector of Vt
     H = Vt[-1].reshape(3, 3)
-
     # Normalize the homography matrix
     H = H / H[-1, -1]
-
     return H
 
-def decompose_homography(H):
-    """
-    Estimates the intrinsic camera matrix A and the extrinsic parameters R and t
-    from a given homography matrix.
-    :param H: Homography matrix
-    :return: A (intrinsic matrix), R (rotation matrix), t (translation vector)
-    """
 
-    # Normalize the homography matrix
-    H = H / H[2, 2]
+def estimate_overall_camera_matrix(homographies, image_sizes):
+    def vij(h, i, j):
+        return np.array([
+            h[0, i] * h[0, j], h[0, i] * h[1, j] + h[1, i] * h[0, j],
+            h[1, i] * h[1, j], h[2, i] * h[0, j] + h[0, i] * h[2, j],
+            h[2, i] * h[1, j] + h[1, i] * h[2, j], h[2, i] * h[2, j]
+        ])
 
-    # Estimate the intrinsic camera matrix A
-    # Assuming the optical center is at the image center
-    width = 961  # Set the width of your image
-    height = 931 # Set the height of your image
-    cx = width / 2
-    cy = height / 2
-    A = np.array([
-        [H[0, 0], H[0, 1], cx],
-        [H[1, 0], H[1, 1], cy],
-        [0, 0, 1]
-    ])
+    n = len(homographies)  # Anzahl der Bilder
 
-    # Extract the rotation and translation matrix
-    h1 = H[:, 0]
-    h2 = H[:, 1]
-    h3 = np.cross(h1, h2)
+    V = []
+    for H in homographies:
+        V.append(vij(H, 0, 1))
+        V.append(vij(H, 0, 0) - vij(H, 1, 1))
 
-    norm = np.linalg.norm(np.linalg.inv(A).dot(h1))
-    r1 = h1 / norm
-    r2 = h2 / norm
-    r3 = h3 / norm
-    t = H[:, 2] / norm
+    if n == 2:
+        # Zusätzliche Gleichung für den Fall n = 2 hinzufügen
+        V.append([0, 1, 0, 0, 0, 0])
 
-    # Ensure the determinant of R is positive
-    R = np.column_stack((r1, r2, r3))
-    if np.linalg.det(R) < 0:
-        R = -R
+    V = np.array(V)
+    U, S, Vt = np.linalg.svd(V)
+    b = Vt[-1]
 
-    return A, R, t
+    if n == 1:
+        # Nur zwei Parameter lösbar, wenn n = 1
+        # Annahme: u0 und v0 sind bekannt (z.B. im Bildzentrum)
+        u0, v0 = image_sizes[0][0] / 2, image_sizes[0][1] / 2
+        B = np.array([[b[0], 0, u0], [0, b[1], v0], [0, 0, 1]])
+    else:
+        # Matrix B aus b berechnen
+        B = np.array([[b[0], b[1], b[3]], [b[1], b[2], b[4]], [b[3], b[4], b[5]]])
+
+        v0 = (B[0, 1] * B[0, 2] - B[0, 0] * B[1, 2]) / (B[0, 0] * B[1, 1] - B[0, 1] ** 2)
+        lambda_ = B[2, 2] - ((B[0, 2] ** 2 + v0 * (B[0, 1] * B[0, 2] - B[0, 0] * B[1, 2])) / B[0, 0])
+        alpha = np.sqrt(lambda_ / B[0, 0])
+        beta = np.sqrt(lambda_ * B[0, 0] / (B[0, 0] * B[1, 1] - B[0, 1] ** 2))
+        gamma = -B[0, 1] * alpha ** 2 * beta / lambda_
+        u0 = gamma * v0 / beta - B[0, 2] * alpha ** 2 / lambda_
+
+        K = np.array([[alpha, 0, u0], [0, beta, v0], [0, 0, 1]])
+        return K
+
+    return B
+
 
 def calculate_reprojection_error(points_src, points_dst, H):
     total_error = 0
@@ -137,72 +140,120 @@ def estimate_radial_distortion(imgpoints, objpoints, mtx, rvecs, tvecs):
 
     return k[0][0], k[1][0]
 
-# Load the chessboard image
-image_path = "../calibration_images/02.jpg"  # This path might need to be adjusted
-image = cv2.imread(image_path)
 
-# Define the number of corners in width and height
-width = 7
-height = 9
+def extract_rotation_translation(A, homographies):
+    """
+    Extracts rotation vectors in Rodriguez form and translation vectors from a list of homography matrices,
+    given the overall intrinsic camera matrix A.
+    :param A: Intrinsic camera matrix
+    :param homographies: List of homography matrices
+    :return: List of R_vec (Rodriguez form of rotation vectors), list of t (translation vectors)
+    """
 
-# Find the corners on the chessboard
-success, found_corners = cv2.findChessboardCorners(image, (width, height))
+    rotation_vecs = []
+    translations = []
 
-if success:
-    # Refine the corner positions
-    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-    found_corners_refined = cv2.cornerSubPix(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY),
-                                             found_corners, (11, 11), (-1, -1), criteria)
+    for H in homographies:
 
-    # Define world coordinates for the corners
-    world_corners = np.zeros((width * height, 2), np.float32)
-    for i in range(height):
-        for j in range(width):
-            world_corners[i * width + j] = [j, i]
+        # Extract rotation and translation
+        inv_A = np.linalg.inv(A)
+        h1 = H[:, 0]
+        h2 = H[:, 1]
+        h3 = np.cross(h1, h2)
 
-    # Compute the homography
-    homography_matrix = compute_homography(world_corners, found_corners_refined.squeeze())
+        lambda_ = 1 / np.linalg.norm(inv_A.dot(h1))
+        r1 = lambda_ * inv_A.dot(h1)
+        r2 = lambda_ * inv_A.dot(h2)
+        r3 = np.cross(r1, r2)
+        t = lambda_ * inv_A.dot(H[:, 2])
 
-    # Estimate the intrinsic matrix and extrinsic parameters from the homography matrix
-    A, R, t = decompose_homography(homography_matrix)
+        R = np.column_stack((r1, r2, r3))
+        if np.linalg.det(R) < 0:
+            R = -R
 
-    # Reprojection error
-    reprojection_error = calculate_reprojection_error(world_corners, found_corners_refined.squeeze(), homography_matrix)
+        # Konvertieren in Rodriguez-Form
+        R_vec, _ = cv2.Rodrigues(R)
+        rotation_vecs.append(R_vec)
+        translations.append(t)
 
-    # Visualize reprojection error in the image
-    for i, corner in enumerate(found_corners_refined):
-        cv2.circle(image, tuple(corner.ravel().astype(int)), 5, (0, 0, 255), -1)
-        world_point = np.array([world_corners[i][0], world_corners[i][1], 1]).reshape(-1, 1)
-        estimated_point = np.dot(homography_matrix, world_point)
-        estimated_point /= estimated_point[2]
-        cv2.circle(image, tuple(estimated_point[0:2].ravel().astype(int)), 5, (255, 0, 0), 2)
+    return rotation_vecs, translations
 
-    # Display the image with the visualization of the reprojection errorl
-    cv2.imshow('Chessboard Corners with Reprojection Error', image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
 
-    #print("World Corners:")
-    #print(world_corners)
-    #print("Found Corners:")
-    #print(found_corners_refined)
+# Liste der Bilddateien
+image_files = ["../calibration_images/v2_02.jpg", "../calibration_images/v2_03.jpg"]
 
-    print("Homography Matrix:")
-    print(homography_matrix)
-    print("Intrinsic Camera Matrix A:")
-    print(A)
-    print("Rotation Matrix R:")
-    print(R)
-    print("Translation Vector t:")
-    print(t)
-    print("======================================")
-    # Estimate the radial distortion parameters
-    k1, k2 = estimate_radial_distortion([found_corners_refined], [world_corners], A, [R], [t])
+# Schachbrett Parameter
+width, height = 6, 9
 
-    # Display the estimated parameters
+# Weltkoordinaten für die Ecken definieren
+world_corners = np.zeros((width * height, 2), np.float32)
+for i in range(height):
+    for j in range(width):
+        world_corners[i * width + j] = [j, i]
 
-    print("Reprojection Error:")
-    print(reprojection_error)
-    print("Estimated Radial Distortion Parameters k1, k2:", k1, k2)
-else:
-    print("Corners not found")
+# Listen zur Speicherung der Homographie-Matrizen und Bildgrößen
+homographies_my_function = []
+homographies_opencv = []
+image_sizes = []
+
+# Listen für 3D-Punkte in der Welt und 2D-Punkte im Bild
+object_points = []  # 3D-Punkte in der Welt
+image_points = []   # 2D-Punkte im Bild
+
+# Weltkoordinaten für 3D-Punkte
+objp = np.zeros((height*width, 3), np.float32)
+objp[:, :2] = np.mgrid[0:width, 0:height].T.reshape(-1, 2)
+
+for image_file in image_files:
+    image = cv2.imread(image_file)
+    image_sizes.append(image.shape[1::-1])  # Breite und Höhe hinzufügen
+
+    # Finden der Ecken auf dem Schachbrett
+    success, found_corners = cv2.findChessboardCorners(image, (width, height))
+
+    if success:
+        # Eckenpositionen verfeinern
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+        found_corners_refined = cv2.cornerSubPix(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY),
+                                                 found_corners, (11, 11), (-1, -1), criteria)
+
+        # Anpassen der Formatierung der Punkte
+        found_corners_refined = found_corners_refined.squeeze()
+
+        # Homographie mit Ihrer Funktion berechnen
+        H_my_function = compute_homography(world_corners, found_corners_refined)
+        homographies_my_function.append(H_my_function)
+
+        # Homographie mit OpenCV berechnen
+        H_opencv, _ = cv2.findHomography(world_corners, found_corners_refined)
+        homographies_opencv.append(H_opencv)
+
+        # Punkte für Kamerakalibrierung hinzufügen
+        object_points.append(objp)
+        image_points.append(found_corners_refined)
+
+# Gesamtkameramatrix mit Ihren Homographien schätzen
+A_my_homographies = estimate_overall_camera_matrix(homographies_my_function, image_sizes)
+
+# Gesamtkameramatrix mit OpenCV Homographien schätzen
+A_opencv_homographies = estimate_overall_camera_matrix(homographies_opencv, image_sizes)
+
+# Kamerakalibrierung mit OpenCV
+ret, K_cv, dist, rvecs, tvecs = cv2.calibrateCamera(object_points, image_points, image_sizes[0], None, None)
+
+# Ausgabe der Ergebnisse
+print("Meine Gesamtkameramatrix aus meinen Homographien:")
+print(A_my_homographies)
+print("Gesamtkameramatrix aus OpenCV Homographien:")
+print(A_opencv_homographies)
+print("OpenCV Kameramatrix (K) mit calibrateCamera:")
+print(K_cv)
+
+# Vergleich der Homographie-Matrizen
+for i, (H_my, H_cv) in enumerate(zip(homographies_my_function, homographies_opencv)):
+    print(f"Homographie für Bild {i+1}:")
+    print("Meine Homographie:")
+    print(H_my)
+    print("OpenCV Homographie:")
+    print(H_cv)
+
