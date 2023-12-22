@@ -1,1 +1,0 @@
-This directory is meant for storing the ESP32Cam callibration images. When using the takePic_ESP32CAM.py programm the images are automatically stored here.

@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import os
 
 def compute_homography(points_src, points_dst):
     """
@@ -180,7 +181,8 @@ def extract_rotation_translation(A, homographies):
 
 
 # Liste der Bilddateien
-image_files = ["../calibration_images/v2_02.jpg", "../calibration_images/v2_03.jpg"]
+image_files = os.listdir("./calibration_images/")
+print(image_files)
 
 # Schachbrett Parameter
 width, height = 6, 9
@@ -204,8 +206,10 @@ image_points = []   # 2D-Punkte im Bild
 objp = np.zeros((height*width, 3), np.float32)
 objp[:, :2] = np.mgrid[0:width, 0:height].T.reshape(-1, 2)
 
-for image_file in image_files:
-    image = cv2.imread(image_file)
+for image_idx, image_file in enumerate(image_files):
+    if image_idx ==3:
+        break
+    image = cv2.imread("./calibration_images/"+image_file)
     image_sizes.append(image.shape[1::-1])  # Breite und Höhe hinzufügen
 
     # Finden der Ecken auf dem Schachbrett
