@@ -10,6 +10,7 @@ import levenberg_marquardt as lm
 import numpy.typing as npt
 import typing as tp
 import matplotlib.pyplot as plt
+import homography as hom
 
 class CameraModel():
 	"""Camera model according to Zhang.
@@ -146,73 +147,22 @@ class CameraModel():
 		
 		numViews = len(objectPoints)
 		parameterVec = np.zeros((9+6*numViews,),dtype=np.float64)
-
+		# Initial Guess (given or estimated) ---------------------------------------------------------
 		if estimateInitGuess:
-			# TODO: add homographie part for initial values-----
-			# get inial parameters via homographie
-			# for now hardcoded data of matlab dataset
-			
-			parameterVec[0] = 4.5e3
-			parameterVec[1] = 4.6e3
-			parameterVec[2] = 1.4e3
-			parameterVec[3] = 1.1e3
-			# rotation values
-			parameterVec[9] = -0.7543
-			parameterVec[10] = -0.2778
-			parameterVec[11] = -0.1074
-			parameterVec[12] = -0.8174
-			parameterVec[13] = -0.1010
-			parameterVec[14] = -0.0660
-			parameterVec[15] = -0.7192
-			parameterVec[16] = -0.0772
-			parameterVec[17] = -0.0471
-			parameterVec[18] = -0.7124
-			parameterVec[19] = -0.1927
-			parameterVec[20] = -0.0487
-			parameterVec[21] = -0.8465
-			parameterVec[22] = -0.2002
-			parameterVec[23] = -0.0768
-			parameterVec[24] = -0.7503
-			parameterVec[25] = -0.1890
-			parameterVec[26] = -0.4599
-			parameterVec[27] = -0.6712
-			parameterVec[28] = -0.4151
-			parameterVec[29] = -1.2874
-			parameterVec[30] = -0.6248
-			parameterVec[31] = -0.5495
-			parameterVec[32] = -1.5243
-			parameterVec[33] = -0.7686
-			parameterVec[34] = -0.3634
-			parameterVec[35] = -1.4283
-
-			# translation values
-			parameterVec[36] = -180.06
-			parameterVec[37] = -57.893
-			parameterVec[38] =  786.23
-			parameterVec[39] = -97.378
-			parameterVec[40] = -40.246	
-			parameterVec[41] =  835.66
-			parameterVec[42] = -61.589
-			parameterVec[43] = -141.33
-			parameterVec[44] =  825.77
-			parameterVec[45] = -123.90
-			parameterVec[46] = -148.99
-			parameterVec[47] =  831.32
-			parameterVec[48] = -124.13
-			parameterVec[49] = -28.369
-			parameterVec[50] =  871.66
-			parameterVec[51] = -154.31
-			parameterVec[52] = -71.503
-			parameterVec[53] =  822.46
-			parameterVec[54] = -120.83
-			parameterVec[55] =  26.938
-			parameterVec[56] =  695.35
-			parameterVec[57] = -139.21
-			parameterVec[58] =  43.420
-			parameterVec[59] =  686.92
-			parameterVec[60] = -28.554
-			parameterVec[61] =  31.035
-			parameterVec[62] =  724.86
+			homographies = []
+			for viewIdx, objectPointsView in enumerate(objectPoints):
+				homography = hom.compute_homography(objectPoints[viewIdx], imagePoints[viewIdx])
+				homographies.append(homography)
+			cameraMatrixInit = hom.estimate_overall_camera_matrix(homographies, imageSize)
+			parameterVec[0] = cameraMatrixInit[0,0]
+			parameterVec[1] = cameraMatrixInit[1,1]
+			parameterVec[2] = cameraMatrixInit[0,2]
+			parameterVec[3] = cameraMatrixInit[1,2]
+			rVecs, tVecs = hom.extract_rotation_translation(cameraMatrixInit,homographies)
+			t_offset = len(objectPoints)*3 + 9
+			for viewIdx in range(0,len(objectPoints)):
+				parameterVec[9+viewIdx*3:12+viewIdx*3] = rVecs[viewIdx][:].reshape((3,))
+				parameterVec[t_offset+viewIdx*3:t_offset+3+viewIdx*3] = tVecs[viewIdx][:].reshape((3,))
 		else:
 			parameterVec[0] = cameraMatrix[0,0]
 			parameterVec[1] = cameraMatrix[1,1]
@@ -269,6 +219,7 @@ class CameraModel():
 				print(f"No convergence reached after max iterations [{iteration}]!")
 			print(f"Final RMS reprojection error: {RMSError}")
 			# plot history
+			plt.figure()
 			ax = plt.subplot(111)
 			ax.plot(np.linspace(0,iteration,iteration+1),squareErrorHist)
 			ax.set_title("Convergence Plot")

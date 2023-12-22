@@ -34,7 +34,7 @@ def compute_homography(points_src, points_dst):
     return H
 
 
-def estimate_overall_camera_matrix(homographies, image_sizes):
+def estimate_overall_camera_matrix(homographies, image_size):
     def vij(h, i, j):
         return np.array([
             h[0, i] * h[0, j], h[0, i] * h[1, j] + h[1, i] * h[0, j],
@@ -60,8 +60,8 @@ def estimate_overall_camera_matrix(homographies, image_sizes):
     if n == 1:
         # Nur zwei Parameter lösbar, wenn n = 1
         # Annahme: u0 und v0 sind bekannt (z.B. im Bildzentrum)
-        u0, v0 = image_sizes[0][0] / 2, image_sizes[0][1] / 2
-        B = np.array([[b[0], 0, u0], [0, b[1], v0], [0, 0, 1]])
+        v0, u0 = image_size[0] / 2, image_size[1] / 2
+        K = np.array([[b[0], 0, u0], [0, b[1], v0], [0, 0, 1]])
     else:
         # Matrix B aus b berechnen
         B = np.array([[b[0], b[1], b[3]], [b[1], b[2], b[4]], [b[3], b[4], b[5]]])
@@ -74,9 +74,8 @@ def estimate_overall_camera_matrix(homographies, image_sizes):
         u0 = gamma * v0 / beta - B[0, 2] * alpha ** 2 / lambda_
 
         K = np.array([[alpha, 0, u0], [0, beta, v0], [0, 0, 1]])
-        return K
 
-    return B
+    return K
 
 
 def calculate_reprojection_error(points_src, points_dst, H):
@@ -180,84 +179,89 @@ def extract_rotation_translation(A, homographies):
     return rotation_vecs, translations
 
 
-# Liste der Bilddateien
-image_files = os.listdir("./calibration_images/")
-print(image_files)
 
-# Schachbrett Parameter
-width, height = 6, 9
+if __name__ == "__main__":
+	# Liste der Bilddateien
+	image_files = os.listdir("./calibration_images/")
+	print(image_files)
 
-# Weltkoordinaten für die Ecken definieren
-world_corners = np.zeros((width * height, 2), np.float32)
-for i in range(height):
-    for j in range(width):
-        world_corners[i * width + j] = [j, i]
+	# Schachbrett Parameter
+	width, height = 6, 9
 
-# Listen zur Speicherung der Homographie-Matrizen und Bildgrößen
-homographies_my_function = []
-homographies_opencv = []
-image_sizes = []
+	# Weltkoordinaten für die Ecken definieren
+	world_corners = np.zeros((width * height, 2), np.float32)
+	for i in range(height):
+		for j in range(width):
+			world_corners[i * width + j] = [j, i]
 
-# Listen für 3D-Punkte in der Welt und 2D-Punkte im Bild
-object_points = []  # 3D-Punkte in der Welt
-image_points = []   # 2D-Punkte im Bild
+	# Listen zur Speicherung der Homographie-Matrizen und Bildgrößen
+	homographies_my_function = []
+	homographies_opencv = []
 
-# Weltkoordinaten für 3D-Punkte
-objp = np.zeros((height*width, 3), np.float32)
-objp[:, :2] = np.mgrid[0:width, 0:height].T.reshape(-1, 2)
+	# Listen für 3D-Punkte in der Welt und 2D-Punkte im Bild
+	object_points = []  # 3D-Punkte in der Welt
+	image_points = []   # 2D-Punkte im Bild
 
-for image_idx, image_file in enumerate(image_files):
-    if image_idx ==3:
-        break
-    image = cv2.imread("./calibration_images/"+image_file)
-    image_sizes.append(image.shape[1::-1])  # Breite und Höhe hinzufügen
+	# Weltkoordinaten für 3D-Punkte
+	objp = np.zeros((height*width, 3), np.float32)
+	objp[:, :2] = np.mgrid[0:width, 0:height].T.reshape(-1, 2)
 
-    # Finden der Ecken auf dem Schachbrett
-    success, found_corners = cv2.findChessboardCorners(image, (width, height))
+	for image_idx, image_file in enumerate(image_files):
+		if image_idx ==3:
+			break
+		image = cv2.imread("./calibration_images/"+image_file)
+		if image_idx == 0:
+			image_size = image.shape[0:2]  # Breite und Höhe hinzufügen
+		else:
+			if image_size != image.shape[0:2]:
+				raise ValueError("Image shapes must be equal for calibration.")
 
-    if success:
-        # Eckenpositionen verfeinern
-        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-        found_corners_refined = cv2.cornerSubPix(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY),
-                                                 found_corners, (11, 11), (-1, -1), criteria)
+		# Finden der Ecken auf dem Schachbrett
+		success, found_corners = cv2.findChessboardCorners(image, (width, height))
 
-        # Anpassen der Formatierung der Punkte
-        found_corners_refined = found_corners_refined.squeeze()
+		if success:
+			# Eckenpositionen verfeinern
+			criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+			found_corners_refined = cv2.cornerSubPix(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY),
+													found_corners, (11, 11), (-1, -1), criteria)
 
-        # Homographie mit Ihrer Funktion berechnen
-        H_my_function = compute_homography(world_corners, found_corners_refined)
-        homographies_my_function.append(H_my_function)
+			# Anpassen der Formatierung der Punkte
+			found_corners_refined = found_corners_refined.squeeze()
 
-        # Homographie mit OpenCV berechnen
-        H_opencv, _ = cv2.findHomography(world_corners, found_corners_refined)
-        homographies_opencv.append(H_opencv)
+			# Homographie mit Ihrer Funktion berechnen
+			H_my_function = compute_homography(world_corners, found_corners_refined)
+			homographies_my_function.append(H_my_function)
 
-        # Punkte für Kamerakalibrierung hinzufügen
-        object_points.append(objp)
-        image_points.append(found_corners_refined)
+			# Homographie mit OpenCV berechnen
+			H_opencv, _ = cv2.findHomography(world_corners, found_corners_refined)
+			homographies_opencv.append(H_opencv)
 
-# Gesamtkameramatrix mit Ihren Homographien schätzen
-A_my_homographies = estimate_overall_camera_matrix(homographies_my_function, image_sizes)
+			# Punkte für Kamerakalibrierung hinzufügen
+			object_points.append(objp)
+			image_points.append(found_corners_refined)
 
-# Gesamtkameramatrix mit OpenCV Homographien schätzen
-A_opencv_homographies = estimate_overall_camera_matrix(homographies_opencv, image_sizes)
+	# Gesamtkameramatrix mit Ihren Homographien schätzen
+	A_my_homographies = estimate_overall_camera_matrix(homographies_my_function, image_size)
 
-# Kamerakalibrierung mit OpenCV
-ret, K_cv, dist, rvecs, tvecs = cv2.calibrateCamera(object_points, image_points, image_sizes[0], None, None)
+	# Gesamtkameramatrix mit OpenCV Homographien schätzen
+	A_opencv_homographies = estimate_overall_camera_matrix(homographies_opencv, image_size)
 
-# Ausgabe der Ergebnisse
-print("Meine Gesamtkameramatrix aus meinen Homographien:")
-print(A_my_homographies)
-print("Gesamtkameramatrix aus OpenCV Homographien:")
-print(A_opencv_homographies)
-print("OpenCV Kameramatrix (K) mit calibrateCamera:")
-print(K_cv)
+	# Kamerakalibrierung mit OpenCV
+	ret, K_cv, dist, rvecs, tvecs = cv2.calibrateCamera(object_points, image_points, image_size[::-1], None, None)
 
-# Vergleich der Homographie-Matrizen
-for i, (H_my, H_cv) in enumerate(zip(homographies_my_function, homographies_opencv)):
-    print(f"Homographie für Bild {i+1}:")
-    print("Meine Homographie:")
-    print(H_my)
-    print("OpenCV Homographie:")
-    print(H_cv)
+	# Ausgabe der Ergebnisse
+	print("Meine Gesamtkameramatrix aus meinen Homographien:")
+	print(A_my_homographies)
+	print("Gesamtkameramatrix aus OpenCV Homographien:")
+	print(A_opencv_homographies)
+	print("OpenCV Kameramatrix (K) mit calibrateCamera:")
+	print(K_cv)
+
+	# Vergleich der Homographie-Matrizen
+	for i, (H_my, H_cv) in enumerate(zip(homographies_my_function, homographies_opencv)):
+		print(f"Homographie für Bild {i+1}:")
+		print("Meine Homographie:")
+		print(H_my)
+		print("OpenCV Homographie:")
+		print(H_cv)
 
