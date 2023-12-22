@@ -76,7 +76,7 @@ void setup() {
 	pinMode(4,OUTPUT);
 
 	// Set up serial communication
-	Serial.begin(115200);
+	Serial.begin(500000);
 
 	// Init camera
 	camera_init();
@@ -125,7 +125,7 @@ esp_err_t camera_init(){
 	if(psramFound()){
 		camera_config.frame_size = FRAMESIZE_UXGA;
 		camera_config.jpeg_quality = 10;
-		camera_config.fb_count = 2;
+		camera_config.fb_count = 1;
 	} else {
 		camera_config.frame_size = FRAMESIZE_SVGA;
 		camera_config.jpeg_quality = 12;
@@ -176,16 +176,21 @@ esp_err_t camera_init(){
 	//s->set_framesize(s, FRAMESIZE_QVGA);
 
 	// Initially capture some frames
-	for (uint8_t i = 0; i < 10; i++) {
-		camera_fb_t * fb = esp_camera_fb_get();
+	camera_fb_t * fb;
+	for (uint8_t i = 0; i < 5; i++) {
+		digitalWrite(4,HIGH);
+    	fb = esp_camera_fb_get();
+		digitalWrite(4,LOW);
     	esp_camera_fb_return(fb);
-    	fb = nullptr;
+		fb = NULL;
+		delay(500);
 	}
 
     return ESP_OK;
 }
 
 esp_err_t camera_capture(bool flashLight) {
+	static int call = 0;
 	// Frame buffer
 	camera_fb_t * fb = NULL;
 
@@ -206,6 +211,7 @@ esp_err_t camera_capture(bool flashLight) {
   
     //return the frame buffer back to the driver for reuse
     esp_camera_fb_return(fb);
+	fb = NULL;
     return ESP_OK;
 }
 
