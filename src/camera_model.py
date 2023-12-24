@@ -137,7 +137,7 @@ class CameraModel():
 				raise ValueError("Camera matrix must be of shape (3,3)")
 		else:
 			raise ValueError("If giving an initial guess, the camera matrix, rotation vectors and translation vectors must be given.")
-
+		
 		# get calibration data structure and length
 		self.calibrationDataStructure = []
 		length = 0
@@ -147,7 +147,8 @@ class CameraModel():
 		
 		numViews = len(objectPoints)
 		parameterVec = np.zeros((9+6*numViews,),dtype=np.float64)
-		# Initial Guess (given or estimated) ---------------------------------------------------------
+
+		# Initial Guess (given or estimated)
 		if estimateInitGuess:
 			homographies = []
 			for viewIdx, objectPointsView in enumerate(objectPoints):
@@ -173,11 +174,10 @@ class CameraModel():
 			for viewIdx in range(0,len(objectPoints)):
 				parameterVec[9+viewIdx*3:12+viewIdx*3] = rVecs[viewIdx][:]
 				parameterVec[t_offset+viewIdx*3:t_offset+3+viewIdx*3] = tVecs[viewIdx][:]
-		# --------------------------------------------------
 		
-		# Optimization ----------------------------------------
+		# Optimization
 		# create optimzer
-		levMar = lm.LevenbergMarquardtOptimizer(maxIterations=35,parameterStepThr=1e-8,gradientThr=1e-6)
+		levMar = lm.LevenbergMarquardtOptimizer(maxIterations=35,parameterStepThr=1e-6,gradientThr=1e-6)
 
 		# serialize the object and image data
 		objectPointsSer = np.zeros((length,3))
@@ -192,7 +192,6 @@ class CameraModel():
 		# call _residual_function with initCall=True befor optimization
 		self._residual_function(parameterVec,objectPointsSer,imagePointsSer,initCall=True)
 		optimalParams, conv, error, _, _, _, iteration, squareErrorHist = levMar.optimize(self._residual_function,parameterVec,objectPointsSer,imagePointsSer)
-		# -----------------------------------------------------
 
 		self.cameraMat = np.array([	[optimalParams[0],0,optimalParams[2]],
 									[0,optimalParams[1],optimalParams[3]],
