@@ -115,17 +115,6 @@ def extract_rotation_translation(A, homographies):
 
     return rotation_vecs, translations
 
-def calculate_reprojection_error(points_src, points_dst, H):
-    total_error = 0
-    for i in range(len(points_src)):
-        src_pt = np.array([points_src[i][0], points_src[i][1], 1]).reshape(-1, 1)
-        est_dst = np.dot(H, src_pt)
-        est_dst /= est_dst[2]
-        actual_dst = np.array([points_dst[i][0], points_dst[i][1], 1])
-        error = np.linalg.norm(actual_dst - est_dst.flatten())
-        total_error += error
-    return total_error / len(points_src)
-
 if __name__ == "__main__":
 	# Liste der Bilddateien
 	image_files = os.listdir("./calibration_images/")
