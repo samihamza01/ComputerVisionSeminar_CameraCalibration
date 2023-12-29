@@ -23,7 +23,7 @@ class LevenbergMarquardtOptimizer():
 	lamb: float
 
 	def __init__(self, maxIterations=200, gradientThr=1e-8, parameterStepThr=1e-8) -> None:
-		"""Constrictor.
+		"""Constructor.
 
 		Args:
 			maxIterations (tp.Callable): 			Value specifying the maximum number of Iterations (default = 400).
@@ -39,18 +39,18 @@ class LevenbergMarquardtOptimizer():
 		self.parameterStepThr = parameterStepThr
 		return
 	
-	def _cal_jacobian(self, residualFunction: tp.Callable, parameterVector: npt.ArrayLike, inputVector: npt.ArrayLike, referenceVector: npt.ArrayLike) -> npt.ArrayLike:
+	def _cal_jacobian(self, residualFunction: tp.Callable, parameterVector: npt.ArrayLike, inputVector: npt.ArrayLike, referenceVector: npt.ArrayLike) -> npt.NDArray:
 		"""Helper Function to calculate the jacobian of the given residual function.
 
 		Args:
-			residualFunction (tp.Callable): 			Residualfunction. Must be a function of the parametervector (paramVector),
+			residualFunction (tp.Callable): 			Residualfunction. Must be a function of the parametervector (paramVector),\
 														the input (inputVector) and the reference data (referenceVector).
 			parameterVector (npt.ArrayLike): 			Vector containing the function parameters (shape: (n,)).
 			inputVector (npt.ArrayLike): 				Vector of input to corresponding reference.
 			referenceVector (npt.ArrayLike): 			Vector containing all reference/ground truth data.
 
 		Returns:
-			npt.ArrayLike: Jacobian matrix.
+			npt.NDArray: Jacobian matrix.
 		"""
 		
 
@@ -73,23 +73,23 @@ class LevenbergMarquardtOptimizer():
 		return jacobianMat
 
 
-	def optimize(self, residualFunction: tp.Callable, parameterVector: npt.ArrayLike, inputVector: npt.ArrayLike, referenceVector: npt.ArrayLike) -> tp.Tuple[npt.ArrayLike,int,float,float,npt.ArrayLike,npt.ArrayLike,int]:
-		"""Function to optimze the specified problem
+	def optimize(self, residualFunction: tp.Callable, parameterVector: npt.ArrayLike, inputVector: npt.ArrayLike, referenceVector: npt.ArrayLike) -> tp.Tuple[npt.NDArray,float,npt.NDArray,int,int,tp.List[float]]:
+		"""Function to optimze the specified problem.
 
 		Args:
-			residualFunction (tp.Callable): 			Residualfunction. Must be a function of the parametervector (paramVector),
+			residualFunction (tp.Callable): 			Residualfunction. Must be a function of the parametervector (paramVector),\
 														the input (inputVector) and the reference data (referenceVector).
 			parameterVector (npt.ArrayLike): 			Vector containing the function parameters.
 			inputVector (npt.ArrayLike): 				Vector of input to corresponding reference.
 			referenceVector (npt.ArrayLike): 			Vector containing all reference/ground truth data.
 
 		Returns:
-			tp.Tuple[npt.ArrayLike,float,float,int]: 	A tupel of the optimal parameters, the convergence/stopping reason 
-														{0: in gradient, 1: in paramerters, 2: max iterations},
-														the final error of the least squares problem,
-														the mean of the residuals, the standart deviation of the parameters,
-														the relative error of the parameters
-														and the iteration where convergence was reached.
+			tp.Tuple[npt.NDArray,float,npt.NDArray,int,int,tp.List[float]]: 	A tupel of the optimal parameters, \
+																				the final square error of the least squares problem, \
+																				the standart deviation of the parameters, \
+																				the iteration where convergence was reached, \
+																				the convergence/stopping reason {0: in gradient, 1: in paramerters, 2: max iterations}, \
+																				and the squared error history of the iterations.
 		"""
 
 		iteration = 0
@@ -113,10 +113,10 @@ class LevenbergMarquardtOptimizer():
 		# convergence condition
 		found = np.max(np.abs(grad)) <= self.gradientThr
 
-		SquareError = []
+		square_error_hist = []
 		while (not found) and (iteration <= self.maxIterations) :
 			# History logging
-			SquareError.append(np.matmul(residualVector.T,residualVector))
+			square_error_hist.append(np.matmul(residualVector.T,residualVector))
 			# solve normal equation for parameter update
 			parameterStep = np.linalg.solve(infMat + lamb*np.diag(np.diag(infMat)), -grad)
 
@@ -154,22 +154,20 @@ class LevenbergMarquardtOptimizer():
 					v = 2*v
 			iteration += 1 
 		
+		# determine termination reason
 		if (conv != 1) and iteration >= self.maxIterations:
 			conv = 2
 		elif conv != 1:
 			conv = 0
-		
 
-		# error (sensitivity analysis)
+		# error (sensitivity analysis see Garvin)
 		covar_parameters = np.linalg.inv(infMat)
 		stddev_parameters = np.sqrt(np.diag(covar_parameters))
-		error_parameters = None#stddev_parameters/parameterVector
 
 		# final error of the least square problem
-		error = np.matmul(residualVector.T,residualVector)
-		# mean of the residuals
-		meanResidual = np.sum(residualVector)/residualVector.shape[0]
-		return (parameterVector, conv, error, meanResidual, stddev_parameters, error_parameters, iteration-1, SquareError)
+		square_error = np.matmul(residualVector.T,residualVector)
+
+		return (parameterVector, square_error, stddev_parameters, iteration-1, conv, square_error_hist)
 	
 
 if __name__ == "__main__":
@@ -191,20 +189,18 @@ if __name__ == "__main__":
 	# initial parameter guess
 	initParams = np.array([1.,0.])
 	print(f"Initial params: a={initParams[0]}, b={initParams[1]}")
-	levMarq = LevenbergMarquardtOptimizer(30,1e-8,1e-8)
-	paramsOpt, conv, error, meanResidual, stddev_parameters, error_parameters, iteration, squareErrorHist = levMarq.optimize(residualFunc,initParams,inp, y)
+	levMarq = LevenbergMarquardtOptimizer(maxIterations=30,gradientThr=1e-8,parameterStepThr=1e-8)
+	paramsOpt, final_square_error, stddev_parameters, iteration, conv, squareErrorHist = levMarq.optimize(residualFunc,initParams,inp, y)
 	if conv == 0:
 		print(f"Convergence in gradient after {iteration} iterations.")
 	elif conv == 1:
 		print(f"Convergence in parameters after {iteration} iterations.")
 	else:
-		print(f"No convergence reached after max iterations [{iteration}]!")
+		print(f"Max iterations reached [{iteration}]!")
 	print(f"Optimized params: {paramsOpt}")
-	print(f"Final squared error: {error}")
-	print(f"Mean residuals: {meanResidual}")
+	print(f"Final squared error: {final_square_error}")
 	print("Sensitivity:")
 	print(f"Standard deviation params: {stddev_parameters}")
-	print(f"Standard error params: {error_parameters}")
 
 	# plot history
 	ax = plt.subplot(111)

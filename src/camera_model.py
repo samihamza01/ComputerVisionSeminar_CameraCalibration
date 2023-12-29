@@ -15,6 +15,7 @@ import homography as hom
 class CameraModel():
 	"""Camera model according to Zhang.
 	"""
+	# camera attributes
 	cameraMat: npt.ArrayLike
 	distortionVec: npt.ArrayLike
 	imageSize: tp.Tuple[int,int]
@@ -26,7 +27,7 @@ class CameraModel():
 
 	
 	def __init__(self, cameraMat: tp.Optional[npt.ArrayLike] = None, distortionVec: tp.Optional[npt.ArrayLike] = None, imageSize: tp.Optional[tp.Tuple[int,int]] = None) -> None:
-		"""_summary_
+		"""Constructor.
 
 		Args:
 			cameraMat (tp.Optional[npt.ArrayLike]): 		Camera Matrix of the camera object. If none is given, it is set to a 3x3 matrix of zeros.
@@ -53,7 +54,7 @@ class CameraModel():
 		return
 
 	def world_2_image(self, objectPoint: npt.ArrayLike,rVec: npt.ArrayLike, tVec: npt.ArrayLike) -> npt.ArrayLike:
-		"""Function to project object point with given orientation and position to camera image plane.
+		"""Function to project an object point with given orientation and position to camera image plane.
 
 		Args:
 			objectPoint (npt.ArrayLike): 3D Point to project.
@@ -126,6 +127,28 @@ class CameraModel():
 		return v_rot
 
 	def calibrate(self, objectPoints: tp.List[tp.List[npt.ArrayLike]], imagePoints: tp.List[tp.List[npt.ArrayLike]], imageSize: tp.Tuple[int,int], cameraMatrix: tp.Optional[npt.ArrayLike] = None, rVecs: tp.Optional[tp.List[npt.ArrayLike]] = None, tVecs: tp.Optional[tp.List[npt.ArrayLike]] = None, verbose: tp.Optional[bool] = False) -> tp.Tuple[float,tp.List[npt.ArrayLike],tp.List[npt.ArrayLike]]:
+		"""_summary_
+
+		Args:
+			objectPoints (tp.List[tp.List[npt.ArrayLike]]): List of List of Object Points for the corresponding views.
+			imagePoints (tp.List[tp.List[npt.ArrayLike]]): List of List of Image Points for the corresponding views.
+			imageSize (tp.Tuple[int,int]): Size of the images used for calibration.
+			cameraMatrix (tp.Optional[npt.ArrayLike], optional): Initial guess for camera matrix. Defaults to None.
+			rVecs (tp.Optional[tp.List[npt.ArrayLike]], optional): Initial guess for rotation vectors. Defaults to None.
+			tVecs (tp.Optional[tp.List[npt.ArrayLike]], optional): Initial guess for translation vectors. Defaults to None.
+			verbose (tp.Optional[bool], optional): Displays some information about the optimization. Defaults to False.
+
+		Raises:
+			ValueError: If nonesense input.
+			ValueError: If nonesense input.
+			ValueError: If nonesense input.
+
+		Returns:
+			tp.Tuple[float,tp.List[npt.ArrayLike],tp.List[npt.ArrayLike]]: 	Tuple of the RMS-Reprojection-Error, \
+																			list of the estimated roatation vectors, \
+																			list of the estimated translation vectors.														
+		"""
+
 		# Perform some input parameter checks
 		if rVecs is None and tVecs is None and cameraMatrix is None:
 			estimateInitGuess = True
@@ -150,15 +173,19 @@ class CameraModel():
 
 		# Initial Guess (given or estimated)
 		if estimateInitGuess:
+			# Estiamation via closed form solution
 			homographies = []
 			for viewIdx, objectPointsView in enumerate(objectPoints):
 				homography = hom.compute_homography(objectPoints[viewIdx], imagePoints[viewIdx])
 				homographies.append(homography)
+			# set camera matrix
 			cameraMatrixInit = hom.estimate_overall_camera_matrix(homographies, imageSize)
 			parameterVec[0] = cameraMatrixInit[0,0]
 			parameterVec[1] = cameraMatrixInit[1,1]
 			parameterVec[2] = cameraMatrixInit[0,2]
 			parameterVec[3] = cameraMatrixInit[1,2]
+
+			# set roations and translation parameters
 			rVecs, tVecs = hom.extract_rotation_translation(cameraMatrixInit,homographies)
 			t_offset = len(objectPoints)*3 + 9
 			for viewIdx in range(0,len(objectPoints)):
@@ -191,14 +218,14 @@ class CameraModel():
 
 		# call _residual_function with initCall=True befor optimization
 		self._residual_function(parameterVec,objectPointsSer,imagePointsSer,initCall=True)
-		optimalParams, conv, error, _, _, _, iteration, squareErrorHist = levMar.optimize(self._residual_function,parameterVec,objectPointsSer,imagePointsSer)
+		optimalParams, final_square_error, _, iteration, conv, squareErrorHist = levMar.optimize(self._residual_function,parameterVec,objectPointsSer,imagePointsSer)
 
 		self.cameraMat = np.array([	[optimalParams[0],0,optimalParams[2]],
 									[0,optimalParams[1],optimalParams[3]],
 									[0,0,1]])
 		self.distortionVec = optimalParams[4:9]
 		self.imageSize = imageSize
-		RMSError = np.sqrt(error)/length
+		RMSError = np.sqrt(final_square_error/length)
 
 		# get rVecs and tVecs
 		rVecs = []
@@ -215,7 +242,7 @@ class CameraModel():
 			elif conv == 1:
 				print(f"Convergence in parameters after {iteration} iterations.")
 			else:
-				print(f"No convergence reached after max iterations [{iteration}]!")
+				print(f"Max iterations reached [{iteration}]!")
 			print(f"Final RMS reprojection error: {RMSError}")
 			# plot history
 			plt.figure()
@@ -329,9 +356,6 @@ class CameraModel():
 		self.residualParamBuffer = parameterVec.copy()
 		return residualVec
 
-	def _calibration_plot_reprojection_error(self, parameterVec: npt.ArrayLike, objectPoints: tp.List[tp.List[npt.ArrayLike]], imagePoints: tp.List[tp.List[npt.ArrayLike]]):
-		return
-
 	def save_cam_to_json(self, path: str):
 		"""Function to save the camera matrix and the distortion vector to a json file.
 
@@ -356,13 +380,28 @@ class CameraModel():
 		self.imageSize = tuple(camData["imageSize"])
 		return
 
-	def undistort_image(self, image):
+	def undistort_image(self, image: npt.NDArray) -> npt.NDArray:
+		"""Undistort a given image. If the image size is different from the image size used for calibration, then the cameramatrix is automatically scaled.
+
+		Args:
+			image (npt.NDArray): Image to undistort.
+
+		Returns:
+			npt.NDArray: Undistorted image.
+		"""
 		pix_v, pix_u, channels = image.shape
+
+		camera_matrix = self.cameraMat.copy()
+		if (pix_v, pix_u) != self.imageSize:
+			# rescale camera matrix
+			camera_matrix[0,:] *= pix_u/self.imageSize[1]
+			camera_matrix[1,:] *= pix_v/self.imageSize[0]
 
 		pixel_coords_uv=np.ones((3,pix_u*pix_v))
 		pixel_coords_uv[0:2,:] = np.mgrid[0:pix_u,0:pix_v].reshape(2,-1)
+
 		# project image points to normalised image plane
-		inv_camera_matrix = np.linalg.inv(self.cameraMat)
+		inv_camera_matrix = np.linalg.inv(camera_matrix)
 		norm_img_point = np.matmul(inv_camera_matrix[0:2,:],pixel_coords_uv)
 
 		# Add distortion
@@ -382,7 +421,7 @@ class CameraModel():
 		norm_dist_img_points[1,:] = dist_rad_y + dist_tan_y
 
 		# project distorted points back into image plane
-		dist_img_points = np.matmul(self.cameraMat[0:2,:],norm_dist_img_points)
+		dist_img_points = np.matmul(camera_matrix[0:2,:],norm_dist_img_points)
 
 		# search corresponding pixels for undistorted image pixels
 		undistorted_image = np.zeros((pix_v,pix_u,channels),dtype=np.uint8)
