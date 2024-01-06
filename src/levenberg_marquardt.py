@@ -121,7 +121,7 @@ class LevenbergMarquardtOptimizer():
 			parameterStep = np.linalg.solve(infMat + lamb*np.diag(np.diag(infMat)), -grad)
 
 			# check for convergence in parameterStep
-			if np.linalg.norm(parameterStep) <= self.parameterStepThr*(np.linalg.norm(parameterVector) + self.parameterStepThr):
+			if np.max(np.abs((parameterStep/(np.abs(parameterVector) + self.parameterStepThr)))) <= self.parameterStepThr:
 				conv = 1
 				found = True
 			else:

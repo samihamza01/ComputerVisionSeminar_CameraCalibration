@@ -204,7 +204,7 @@ class CameraModel():
 		
 		# Optimization
 		# create optimzer
-		levMar = lm.LevenbergMarquardtOptimizer(maxIterations=35,parameterStepThr=1e-6,gradientThr=1e-6)
+		levMar = lm.LevenbergMarquardtOptimizer(maxIterations=35,parameterStepThr=5e-3,gradientThr=1e-6)
 
 		# serialize the object and image data
 		objectPointsSer = np.zeros((length,3))
@@ -260,7 +260,8 @@ class CameraModel():
 		"""Helper function to transform an object/world point to the image plane of the camera.
 
 		Args:
-			parameterVec (npt.ArrayLike): Parameter vector containing (fx,fy,cx,cy,k1,k2,k3,p1,p2,r1,r2,r3,t1,t2,t3).
+			parameterVec (npt.ArrayLike): Parameter vector containing (alpha,beta,u0,v0,k1,k2,k3,p1,p2,r1,r2,r3,t1,t2,t3). In this parameter vecotr,\
+											only the extrinsics for this particular view are listed.
 			objectPoint (npt.ArrayLike): 3D object/world point to transform to the image plane.
 
 		Returns:
@@ -305,7 +306,7 @@ class CameraModel():
 		"""Function calculating the residual vector for optimization with Levenberg Marquardt. Must be called with `initCall = True` before first use in calibration.
 
 		Args:
-			parameterVec (npt.ArrayLike): Parameter vector containing (fx,fy,cx,cy,k1,k2,k3,p1,p2,r1,r2,r3,t1,t2,t3).
+			parameterVec (npt.ArrayLike): Parameter vector containing (alpha,beta,u0,v0,k1,k2,k3,p1,p2,r1,r2,r3,...,t1,t2,t3,...).
 			objectPoints (npt.ArrayLike): Object point list, where the outer list contains the view sets and the inner list contains the points per view.
 			imagePoints (npt.ArrayLike): Image point list, where the outer list contains the view sets and the inner list contains the points per view. 
 			initCall (tp.Optional[bool]): indicating if it is the first call in the calibration.
